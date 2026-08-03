@@ -1,0 +1,17 @@
+[DOCUMENT]
+MID: 8cc3a716eefd4bcc9bc2ea085a654a75
+TITLE: Low-Level Requirements
+PREFIX: LLR-
+OPTIONS:
+  ENABLE_MID: True
+
+[REQUIREMENT]
+MID: 64ece6f2b999461882e12427f1ebd897
+UID: LLR-1
+TITLE: Initial low-level requirement
+STATEMENT: >>>
+The software shall print a hello world message.
+<<<
+RELATIONS:
+- TYPE: Parent
+  VALUE: HLR-1

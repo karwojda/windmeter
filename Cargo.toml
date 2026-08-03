@@ -1,0 +1,49 @@
+[package]
+edition = "2024"
+name = "wind_meter"
+version = "0.1.0"
+
+[[bin]]
+name = "wind_meter"
+test = false
+bench = false
+
+[lib]
+harness = false
+
+# for each crate in the `tests` directory
+[[test]]
+name = "wind_meter" # tests/test-name.rs
+harness = false
+
+[dependencies]
+defmt = "1.0"
+defmt-rtt = "1.1"
+panic-probe = { version = "1.0", features = ["print-defmt"] }
+
+embedded-hal = "1.0.0"
+embedded-hal-async = "1.0.0"
+embedded-io = "0.7"
+embedded-io-async = "0.7"
+embedded-storage = "0.3.1"
+cortex-m-rt = "0.7.3"
+
+embassy-executor = { default-features=false, version = "0.9.1", features = ["arch-cortex-m", "executor-thread", "executor-interrupt", "defmt"] }
+embassy-sync = { version = "0.7" }
+embassy-time = { version = "0.5", features = ["defmt", "defmt-timestamp-uptime"] }
+
+cortex-m = { version = "0.7.7", features = ["critical-section-single-core"] }
+embassy-stm32 = { version = "0.6.0", features = ["defmt", "stm32h723zg", "time-driver-tim2", "exti", "memory-x", "unstable-pac", "chrono" ]  }
+embedded-test = { version = "0.7.1", features = ["embassy"] } # Enables async test support
+
+[dev-dependencies]
+
+[profile.release]
+debug = 2
+lto = true
+opt-level = 'z'
+
+[profile.dev]
+debug = 2
+lto = true
+opt-level = "z"
