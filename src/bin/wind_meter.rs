@@ -10,14 +10,16 @@ use embassy_stm32::gpio::{Level, Output, OutputType, Pull, Speed};
 use embassy_stm32::time::khz;
 use embassy_stm32::timer::simple_pwm::{*,PwmPin};
 use embassy_stm32::interrupt::typelevel::EXTI0 as ExtiLine0;
+use embassy_stm32::spi::Spi;
 use embassy_stm32::usart::UartRx;
-use embassy_stm32::{bind_interrupts, exti, peripherals, usart, Config, Peri};
+use embassy_stm32::{bind_interrupts, exti, peripherals, spi, usart, Config, Peri};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::watch::Watch;
-use embassy_time::Timer;
+use embassy_time::{Instant, Timer};
 use embassy_stm32::peripherals::{PE1, PB14, TIM12};
 use {defmt_rtt as _, panic_probe as _};
 use wind_meter::gps::{GpsFix, GpsReceiver};
+use wind_meter::logger::{DataLogger, LogRecord};
 use wind_meter::wind_compute::compute_true_wind;
 use wind_meter::wind_sensor::{CupAndVaneWindSensor, WindCalibration, WindReading};
 use wind_meter::windmeter::Wind;
@@ -28,8 +30,11 @@ use wind_meter::windmeter::Wind;
 // either producer individually -- the two sample at different natural
 // rates (sensor pulses vs GPS fixes) and true wind should use the
 // freshest available pair, not resynchronize to the slower one.
-static APPARENT_WIND: Watch<CriticalSectionRawMutex, WindReading, 1> = Watch::new();
-static GPS_FIX: Watch<CriticalSectionRawMutex, GpsFix, 1> = Watch::new();
+// N=2: each has two readers (wind_compute_task and logger_task).
+static APPARENT_WIND: Watch<CriticalSectionRawMutex, WindReading, 2> = Watch::new();
+static GPS_FIX: Watch<CriticalSectionRawMutex, GpsFix, 2> = Watch::new();
+// N=1: only logger_task reads the computed true wind.
+static TRUE_WIND: Watch<CriticalSectionRawMutex, WindReading, 1> = Watch::new();
 
 // TODO: placeholder pin/peripheral assignment throughout this file --
 // confirm against the real wiring during the hardware verification pass
@@ -61,6 +66,41 @@ async fn main(spawner: Spawner) {
     let _ = spawner.spawn(gps_task(gps_rx));
 
     let _ = spawner.spawn(wind_compute_task());
+
+    let mut spi_config = spi::Config::default();
+    spi_config.frequency = embassy_stm32::time::mhz(1);
+    let spi = Spi::new_blocking(p.SPI1, p.PA5, p.PA7, p.PA6, spi_config);
+    let cs = Output::new(p.PA4, Level::High, Speed::Low);
+    let data_logger = DataLogger::new(spi, cs);
+    let _ = spawner.spawn(logger_task(data_logger));
+}
+
+/// REQ-005 + REQ-008: appends one CSV record per sample period, covering
+/// apparent wind, true wind and the GPS fix, to the SD card. A storage
+/// fault is surfaced (RTT) but never stops the loop -- sensing/broadcasting
+/// keeps running regardless (REQ-005's negative AC).
+#[embassy_executor::task]
+async fn logger_task(mut data_logger: DataLogger<'static>) {
+    const SAMPLE_PERIOD_S: u64 = 1;
+
+    let mut apparent_rx = APPARENT_WIND.receiver().expect("logger_task receiver");
+    let mut true_wind_rx = TRUE_WIND.receiver().expect("logger_task receiver");
+    let mut gps_rx = GPS_FIX.receiver().expect("logger_task receiver");
+
+    loop {
+        Timer::after_secs(SAMPLE_PERIOD_S).await;
+
+        let record = LogRecord {
+            timestamp_ms: Instant::now().as_millis(),
+            apparent: apparent_rx.try_get().unwrap_or(WindReading::INVALID),
+            true_wind: true_wind_rx.try_get().unwrap_or(WindReading::INVALID),
+            gps: gps_rx.try_get().unwrap_or(GpsFix::INVALID),
+        };
+
+        if let Err(e) = data_logger.append(&record) {
+            warn!("log write failed (storage fault?): {}", e);
+        }
+    }
 }
 
 /// REQ-002: combines the latest apparent wind and GPS fix into true wind
@@ -79,6 +119,7 @@ async fn wind_compute_task() {
         let apparent = apparent_rx.try_get().unwrap_or(WindReading::INVALID);
         let gps = gps_rx.try_get().unwrap_or(GpsFix::INVALID);
         let true_wind = compute_true_wind(apparent, gps);
+        TRUE_WIND.sender().send(true_wind);
 
         if true_wind.valid {
             info!(

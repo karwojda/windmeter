@@ -45,6 +45,8 @@ embassy-time = { version = "0.5", features = ["defmt", "defmt-timestamp-uptime"]
 cortex-m = { version = "0.7.7", features = ["critical-section-single-core"], optional = true }
 embassy-stm32 = { version = "0.6.0", features = ["defmt", "stm32h723zg", "time-driver-tim2", "exti", "memory-x", "unstable-pac", "chrono" ], optional = true }
 embedded-test = { version = "0.7.1", features = ["embassy"], optional = true } # Enables async test support
+embedded-sdmmc = { version = "0.10.0", default-features = false, features = ["defmt-log"], optional = true }
+embedded-hal-bus = { version = "0.3.0", optional = true }
 libm = "0.2.16"
 
 [features]
@@ -66,6 +68,8 @@ embedded = [
     "cortex-m",
     "embassy-stm32",
     "embedded-test",
+    "embedded-sdmmc",
+    "embedded-hal-bus",
 ]
 
 [dev-dependencies]

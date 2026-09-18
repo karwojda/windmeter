@@ -104,7 +104,7 @@
 
 ### Task 4 [checkpoint]: Review a day's sailing afterward
 
-- [ ] **Goal**: Append live apparent wind, true wind, and GPS records to a removable SD card as they're produced; storage faults don't crash the device; the whole loop runs on the unit's own battery for a full session. This is the plan's walking skeleton.
+- [~] **Goal**: Append live apparent wind, true wind, and GPS records to a removable SD card as they're produced; storage faults don't crash the device; the whole loop runs on the unit's own battery for a full session. This is the plan's walking skeleton.
 - **Focus**: AC 2 -- storage-fault handling must not crash a device meant to run unattended at sea.
 - **Touches**: `src/logger.rs` (new: `embedded-sdmmc` over SPI), `src/bin/wind_meter.rs` (wire the task).
 - **Depends on**: Task 1, Task 2, Task 3
