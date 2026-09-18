@@ -10,9 +10,10 @@ use embassy_stm32::gpio::{Level, Output, OutputType, Pull, Speed};
 use embassy_stm32::time::khz;
 use embassy_stm32::timer::simple_pwm::{*,PwmPin};
 use embassy_stm32::interrupt::typelevel::EXTI0 as ExtiLine0;
+use embassy_stm32::can::CanConfigurator;
 use embassy_stm32::spi::Spi;
 use embassy_stm32::usart::UartRx;
-use embassy_stm32::{bind_interrupts, exti, peripherals, spi, usart, Config, Peri};
+use embassy_stm32::{bind_interrupts, can, exti, peripherals, spi, usart, Config, Peri};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::watch::Watch;
 use embassy_time::{Instant, Timer};
@@ -20,9 +21,17 @@ use embassy_stm32::peripherals::{PE1, PB14, TIM12};
 use {defmt_rtt as _, panic_probe as _};
 use wind_meter::gps::{GpsFix, GpsReceiver};
 use wind_meter::logger::{DataLogger, LogRecord};
+use wind_meter::nmea2000::{self, wind_data_frame};
 use wind_meter::wind_compute::compute_true_wind;
 use wind_meter::wind_sensor::{CupAndVaneWindSensor, WindCalibration, WindReading};
 use wind_meter::windmeter::Wind;
+
+// TODO: this device's NMEA2000 source address -- any value 0..252 that
+// doesn't collide with another device already on the bus. Real N2K
+// networks run address claim/negotiation; a fixed value is a placeholder
+// until that's implemented, confirmed during the hardware verification
+// pass (tasks.md Task 5).
+const NMEA2000_SOURCE_ADDRESS: u8 = 0x42;
 
 // Latest-value channels (REQ-002): wind_sensor_task and gps_task each
 // publish their newest reading here; wind_compute_task reads whatever is
@@ -33,8 +42,8 @@ use wind_meter::windmeter::Wind;
 // N=2: each has two readers (wind_compute_task and logger_task).
 static APPARENT_WIND: Watch<CriticalSectionRawMutex, WindReading, 2> = Watch::new();
 static GPS_FIX: Watch<CriticalSectionRawMutex, GpsFix, 2> = Watch::new();
-// N=1: only logger_task reads the computed true wind.
-static TRUE_WIND: Watch<CriticalSectionRawMutex, WindReading, 1> = Watch::new();
+// N=2: logger_task and nmea2000_task each read the computed true wind.
+static TRUE_WIND: Watch<CriticalSectionRawMutex, WindReading, 2> = Watch::new();
 
 // TODO: placeholder pin/peripheral assignment throughout this file --
 // confirm against the real wiring during the hardware verification pass
@@ -44,6 +53,8 @@ bind_interrupts!(struct Irqs {
     EXTI0 => exti::InterruptHandler<ExtiLine0>;
     USART3 => usart::InterruptHandler<peripherals::USART3>;
     DMA1_STREAM0 => embassy_stm32::dma::InterruptHandler<peripherals::DMA1_CH0>;
+    FDCAN1_IT0 => can::IT0InterruptHandler<peripherals::FDCAN1>;
+    FDCAN1_IT1 => can::IT1InterruptHandler<peripherals::FDCAN1>;
 });
 
 #[embassy_executor::main]
@@ -73,6 +84,38 @@ async fn main(spawner: Spawner) {
     let cs = Output::new(p.PA4, Level::High, Speed::Low);
     let data_logger = DataLogger::new(spi, cs);
     let _ = spawner.spawn(logger_task(data_logger));
+
+    let mut can_config = CanConfigurator::new(p.FDCAN1, p.PD0, p.PD1, Irqs);
+    can_config.set_bitrate(nmea2000::NMEA2000_BITRATE);
+    let can = can_config.into_normal_mode();
+    let _ = spawner.spawn(nmea2000_task(can));
+}
+
+/// REQ-006: transmits computed true wind as an NMEA2000 (PGN 130306) frame
+/// once per sample period. No valid true wind -> the frame still goes out
+/// but with "data not available" fields, never a stale number silently
+/// re-sent (see `nmea2000::encode_wind_data`'s doc comment).
+#[embassy_executor::task]
+async fn nmea2000_task(mut can: can::Can<'static>) {
+    const SAMPLE_PERIOD_S: u64 = 1;
+
+    let mut true_wind_rx = TRUE_WIND.receiver().expect("nmea2000_task receiver");
+    let mut sid: u8 = 0;
+
+    loop {
+        Timer::after_secs(SAMPLE_PERIOD_S).await;
+
+        let true_wind = true_wind_rx.try_get().unwrap_or(WindReading::INVALID);
+        let frame = wind_data_frame(true_wind, NMEA2000_SOURCE_ADDRESS, sid);
+        sid = sid.wrapping_add(1);
+        can.write(&frame).await;
+
+        if true_wind.valid {
+            info!("nmea2000: sent wind data ({} m/s @ {} deg)", true_wind.speed_mps, true_wind.direction_deg);
+        } else {
+            info!("nmea2000: sent wind data (not available)");
+        }
+    }
 }
 
 /// REQ-005 + REQ-008: appends one CSV record per sample period, covering

@@ -124,7 +124,7 @@
 
 ### Task 5 [pair]: See wind data on my chartplotter
 
-- [ ] **Goal**: Confirm the board's CAN peripheral talks to a real NMEA2000 network, then transmit computed wind as the Wind Data PGN (130306) at a regular interval; if real-network CAN proves unreliable, fall back to NMEA0183 (`requirements.md` Decision 1's runner-up) instead; stale/invalid true wind is not sent.
+- [~] **Goal**: Confirm the board's CAN peripheral talks to a real NMEA2000 network, then transmit computed wind as the Wind Data PGN (130306) at a regular interval; if real-network CAN proves unreliable, fall back to NMEA0183 (`requirements.md` Decision 1's runner-up) instead; stale/invalid true wind is not sent.
 - **Focus**: AC 1 (feasibility gate + fallback decision -- plan.md's flagged single point of failure for REQ-006) and AC 3 (stale-suppression -- wrong data on a real nav instrument is worse than none).
 - **Touches**: `src/nmea2000.rs` (new: FDCAN config + PGN encoding, or NMEA0183 output module if the fallback triggers), `Cargo.toml` (add `embassy-stm32`'s `can` feature), `src/bin/wind_meter.rs` (wire the task).
 - **Depends on**: Task 3
