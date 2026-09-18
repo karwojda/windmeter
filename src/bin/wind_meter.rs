@@ -72,15 +72,24 @@ async fn main(spawner: Spawner) {
     let direction_adc = Adc::new(p.ADC1);
     let _ = spawner.spawn(wind_sensor_task(pulse_pin, direction_adc, p.PA1));
 
-    let gps_rx = UartRx::new(p.USART3, p.PD9, p.DMA1_CH0, Irqs, usart::Config::default())
-        .expect("GPS UART config");
+    // u-blox NEO-6M/NEO-M8N (and most hobby GPS modules) output NMEA0183
+    // at 9600 baud by default -- embassy-stm32's usart::Config default is
+    // 115200, which would silently desync the parser. Confirmed via the
+    // NEO-6M/NEO-M8N datasheets during hardware research.
+    let mut gps_uart_config = usart::Config::default();
+    gps_uart_config.baudrate = 9600;
+    let gps_rx = UartRx::new(p.USART3, p.PD9, p.DMA1_CH0, Irqs, gps_uart_config).expect("GPS UART config");
     let _ = spawner.spawn(gps_task(gps_rx));
 
     let _ = spawner.spawn(wind_compute_task());
 
+    // SCK/MISO on PA5/PA6, MOSI on PB5 -- this is the Nucleo-H723ZG's
+    // actual Arduino/Zio-header SPI1 routing (confirmed against ST's
+    // pinout docs; PA7 -- a chip-level-valid but board-unrouted MOSI
+    // option -- compiled fine earlier but isn't what's on the header).
     let mut spi_config = spi::Config::default();
     spi_config.frequency = embassy_stm32::time::mhz(1);
-    let spi = Spi::new_blocking(p.SPI1, p.PA5, p.PA7, p.PA6, spi_config);
+    let spi = Spi::new_blocking(p.SPI1, p.PA5, p.PB5, p.PA6, spi_config);
     let cs = Output::new(p.PA4, Level::High, Speed::Low);
     let data_logger = DataLogger::new(spi, cs);
     let _ = spawner.spawn(logger_task(data_logger));
@@ -206,15 +215,9 @@ async fn wind_sensor_task(
     direction_adc: Adc<'static, peripherals::ADC1>,
     direction_pin: Peri<'static, peripherals::PA1>,
 ) {
-    // TODO: mps_per_hz / direction_offset_deg are placeholders -- confirm
-    // against the real sensor's datasheet and mounting during hardware
-    // verification (tasks.md Task 1).
-    let calibration = WindCalibration {
-        mps_per_hz: 0.5,
-        direction_offset_deg: 0.0,
-        adc_max: 4095,
-        stale_after_samples: 5,
-    };
+    // Weather Meter Kit (SEN-15901) calibration -- direction_offset_deg
+    // still needs confirming against actual mounting (tasks.md Task 1).
+    let calibration = WindCalibration::weather_meter_kit_defaults();
     const SAMPLE_PERIOD_S: f32 = 1.0;
 
     let mut sensor = CupAndVaneWindSensor::new(pulse_pin, direction_adc, direction_pin, calibration, SAMPLE_PERIOD_S);
