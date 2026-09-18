@@ -48,7 +48,7 @@
 
 ### Task 1 [checkpoint]: See live apparent wind readings
 
-- [ ] **Goal**: Cup-and-vane sensor produces live apparent wind (speed + direction), printed over RTT; disconnected sensor is flagged invalid, not stale.
+- [~] **Goal**: Cup-and-vane sensor produces live apparent wind (speed + direction), printed over RTT; disconnected sensor is flagged invalid, not stale.
 - **Focus**: AC 1 -- does the pulse-capture/debounce actually hold up against a real spinning anemometer, not just a bench signal generator.
 - **Touches**: `src/wind_sensor.rs` (new: `WindSensor` trait + `CupAndVaneWindSensor`), `src/windmeter.rs` (extend `Wind<N>`'s stub `filter_speed`/`filter_direction` to use real `moving_average::MovingAverage`), `src/bin/wind_meter.rs` (spawn the task).
 - **Depends on**: None
