@@ -10,19 +10,23 @@ use embassy_stm32::gpio::{Level, Output, OutputType, Pull, Speed};
 use embassy_stm32::time::khz;
 use embassy_stm32::timer::simple_pwm::{*,PwmPin};
 use embassy_stm32::interrupt::typelevel::EXTI0 as ExtiLine0;
-use embassy_stm32::{bind_interrupts, exti, peripherals, Config, Peri};
+use embassy_stm32::usart::UartRx;
+use embassy_stm32::{bind_interrupts, exti, peripherals, usart, Config, Peri};
 use embassy_time::Timer;
 use embassy_stm32::peripherals::{PE1, PB14, TIM12};
 use {defmt_rtt as _, panic_probe as _};
+use wind_meter::gps::GpsReceiver;
 use wind_meter::wind_sensor::{CupAndVaneWindSensor, WindCalibration};
 use wind_meter::windmeter::Wind;
 
-// TODO: placeholder pin assignment -- confirm against the real anemometer
-// wiring during the hardware verification pass (tasks.md Task 1) and
-// update here. Anything downstream of `WindCalibration` is unaffected by
-// which pins these turn out to be.
+// TODO: placeholder pin/peripheral assignment throughout this file --
+// confirm against the real wiring during the hardware verification pass
+// (tasks.md) and update here. Nothing downstream of the driver
+// constructors is affected by which pins/peripherals these turn out to be.
 bind_interrupts!(struct Irqs {
     EXTI0 => exti::InterruptHandler<ExtiLine0>;
+    USART3 => usart::InterruptHandler<peripherals::USART3>;
+    DMA1_STREAM0 => embassy_stm32::dma::InterruptHandler<peripherals::DMA1_CH0>;
 });
 
 #[embassy_executor::main]
@@ -39,6 +43,31 @@ async fn main(spawner: Spawner) {
     let pulse_pin = ExtiInput::new(p.PA0, p.EXTI0, Pull::Up, Irqs);
     let direction_adc = Adc::new(p.ADC1);
     let _ = spawner.spawn(wind_sensor_task(pulse_pin, direction_adc, p.PA1));
+
+    let gps_rx = UartRx::new(p.USART3, p.PD9, p.DMA1_CH0, Irqs, usart::Config::default())
+        .expect("GPS UART config");
+    let _ = spawner.spawn(gps_task(gps_rx));
+}
+
+/// REQ-003: reads the onboard GPS's NMEA0183 UART stream once per sample
+/// period and prints the live fix -- or that it's currently invalid --
+/// over RTT.
+#[embassy_executor::task]
+async fn gps_task(rx: UartRx<'static, embassy_stm32::mode::Async>) {
+    const MAX_FIX_AGE_S: f32 = 5.0;
+    let mut gps = GpsReceiver::new(rx, MAX_FIX_AGE_S);
+
+    loop {
+        let fix = gps.sample().await;
+        if fix.valid {
+            info!(
+                "gps fix: {} , {} @ {} m/s, {} deg",
+                fix.latitude_deg, fix.longitude_deg, fix.sog_mps, fix.cog_deg
+            );
+        } else {
+            info!("gps fix: invalid (no fix or stale)");
+        }
+    }
 }
 
 /// REQ-001: reads the cup-and-vane sensor once per sample period, smooths

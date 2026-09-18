@@ -7,34 +7,65 @@ version = "0.1.0"
 name = "wind_meter"
 test = false
 bench = false
+required-features = ["embedded"]
 
 [lib]
-harness = false
+# enable test harness on host so `cargo test` uses the standard test harness
+harness = true
 
 # for each crate in the `tests` directory
 [[test]]
 name = "wind_meter" # tests/test-name.rs
-harness = false
+harness = true
 
 [dependencies]
-defmt = "1.0"
-defmt-rtt = "1.1"
-panic-probe = { version = "1.0", features = ["print-defmt"] }
+# Make embedded-only dependencies optional so host `cargo test` can run with `--no-default-features`.
+# The `embedded` feature enables the embedded stack; it remains the default for embedded builds.
 
-embedded-hal = "1.0.0"
-embedded-hal-async = "1.0.0"
-embedded-io = "0.7"
-embedded-io-async = "0.7"
-embedded-storage = "0.3.1"
-cortex-m-rt = "0.7.3"
+# no_std, no external dependencies -- available on host and embedded alike,
+# so GPS sentence parsing (Task 2) is host-testable against real captured
+# sentences without the `embedded` feature.
+nmea0183 = "0.6"
 
-embassy-executor = { default-features=false, version = "0.9.1", features = ["arch-cortex-m", "executor-thread", "executor-interrupt", "defmt"] }
-embassy-sync = { version = "0.7" }
-embassy-time = { version = "0.5", features = ["defmt", "defmt-timestamp-uptime"] }
+defmt = { version = "1.0", optional = true }
+defmt-rtt = { version = "1.1", optional = true }
+panic-probe = { version = "1.0", features = ["print-defmt"], optional = true }
 
-cortex-m = { version = "0.7.7", features = ["critical-section-single-core"] }
-embassy-stm32 = { version = "0.6.0", features = ["defmt", "stm32h723zg", "time-driver-tim2", "exti", "memory-x", "unstable-pac", "chrono" ]  }
-embedded-test = { version = "0.7.1", features = ["embassy"] } # Enables async test support
+embedded-hal = { version = "1.0.0", optional = true }
+embedded-hal-async = { version = "1.0.0", optional = true }
+embedded-io = { version = "0.7", optional = true }
+embedded-io-async = { version = "0.7", optional = true }
+embedded-storage = { version = "0.3.1", optional = true }
+cortex-m-rt = { version = "0.7.3", optional = true }
+
+embassy-executor = { default-features=false, version = "0.9.1", features = ["arch-cortex-m", "executor-thread", "executor-interrupt", "defmt"], optional = true }
+embassy-sync = { version = "0.7", optional = true }
+embassy-time = { version = "0.5", features = ["defmt", "defmt-timestamp-uptime"], optional = true }
+
+cortex-m = { version = "0.7.7", features = ["critical-section-single-core"], optional = true }
+embassy-stm32 = { version = "0.6.0", features = ["defmt", "stm32h723zg", "time-driver-tim2", "exti", "memory-x", "unstable-pac", "chrono" ], optional = true }
+embedded-test = { version = "0.7.1", features = ["embassy"], optional = true } # Enables async test support
+
+[features]
+# Preserve previous embedded behaviour by making it the default feature.
+default = ["embedded"]
+embedded = [
+    "defmt",
+    "defmt-rtt",
+    "panic-probe",
+    "embedded-hal",
+    "embedded-hal-async",
+    "embedded-io",
+    "embedded-io-async",
+    "embedded-storage",
+    "cortex-m-rt",
+    "embassy-executor",
+    "embassy-sync",
+    "embassy-time",
+    "cortex-m",
+    "embassy-stm32",
+    "embedded-test",
+]
 
 [dev-dependencies]
 

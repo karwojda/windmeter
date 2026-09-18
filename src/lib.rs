@@ -4,3 +4,4 @@
 pub mod windmeter;
 pub mod moving_average;
 pub mod wind_sensor;
+pub mod gps;

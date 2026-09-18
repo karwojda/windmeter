@@ -67,7 +67,7 @@
 
 ### Task 2 [checkpoint]: See a live GPS fix
 
-- [ ] **Goal**: Onboard GPS UART stream parsed into a live fix (position, speed-over-ground, course-over-ground), printed over RTT; no/stale fix is flagged invalid.
+- [~] **Goal**: Onboard GPS UART stream parsed into a live fix (position, speed-over-ground, course-over-ground), printed over RTT; no/stale fix is flagged invalid.
 - **Focus**: AC 1 -- the GPS module's actual NMEA0183 sentence set and baud rate, flagged `[VERIFY IN WALKING SKELETON]` in `plan.md` (may differ from assumption).
 - **Touches**: `src/gps.rs` (new: UART task + `nmea0183` crate), `src/bin/wind_meter.rs` (spawn the task).
 - **Depends on**: None
