@@ -12,12 +12,24 @@ use embassy_stm32::timer::simple_pwm::{*,PwmPin};
 use embassy_stm32::interrupt::typelevel::EXTI0 as ExtiLine0;
 use embassy_stm32::usart::UartRx;
 use embassy_stm32::{bind_interrupts, exti, peripherals, usart, Config, Peri};
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::watch::Watch;
 use embassy_time::Timer;
 use embassy_stm32::peripherals::{PE1, PB14, TIM12};
 use {defmt_rtt as _, panic_probe as _};
-use wind_meter::gps::GpsReceiver;
-use wind_meter::wind_sensor::{CupAndVaneWindSensor, WindCalibration};
+use wind_meter::gps::{GpsFix, GpsReceiver};
+use wind_meter::wind_compute::compute_true_wind;
+use wind_meter::wind_sensor::{CupAndVaneWindSensor, WindCalibration, WindReading};
 use wind_meter::windmeter::Wind;
+
+// Latest-value channels (REQ-002): wind_sensor_task and gps_task each
+// publish their newest reading here; wind_compute_task reads whatever is
+// currently published from both, on its own tick, rather than waiting on
+// either producer individually -- the two sample at different natural
+// rates (sensor pulses vs GPS fixes) and true wind should use the
+// freshest available pair, not resynchronize to the slower one.
+static APPARENT_WIND: Watch<CriticalSectionRawMutex, WindReading, 1> = Watch::new();
+static GPS_FIX: Watch<CriticalSectionRawMutex, GpsFix, 1> = Watch::new();
 
 // TODO: placeholder pin/peripheral assignment throughout this file --
 // confirm against the real wiring during the hardware verification pass
@@ -47,6 +59,36 @@ async fn main(spawner: Spawner) {
     let gps_rx = UartRx::new(p.USART3, p.PD9, p.DMA1_CH0, Irqs, usart::Config::default())
         .expect("GPS UART config");
     let _ = spawner.spawn(gps_task(gps_rx));
+
+    let _ = spawner.spawn(wind_compute_task());
+}
+
+/// REQ-002: combines the latest apparent wind and GPS fix into true wind
+/// once per sample period, and prints it -- or that it's currently
+/// invalid -- over RTT.
+#[embassy_executor::task]
+async fn wind_compute_task() {
+    const SAMPLE_PERIOD_S: u64 = 1;
+
+    let mut apparent_rx = APPARENT_WIND.receiver().expect("single wind_compute_task receiver");
+    let mut gps_rx = GPS_FIX.receiver().expect("single wind_compute_task receiver");
+
+    loop {
+        Timer::after_secs(SAMPLE_PERIOD_S).await;
+
+        let apparent = apparent_rx.try_get().unwrap_or(WindReading::INVALID);
+        let gps = gps_rx.try_get().unwrap_or(GpsFix::INVALID);
+        let true_wind = compute_true_wind(apparent, gps);
+
+        if true_wind.valid {
+            info!(
+                "true wind: {} m/s @ {} deg",
+                true_wind.speed_mps, true_wind.direction_deg
+            );
+        } else {
+            info!("true wind: invalid (apparent wind and/or GPS fix unavailable)");
+        }
+    }
 }
 
 /// REQ-003: reads the onboard GPS's NMEA0183 UART stream once per sample
@@ -59,6 +101,7 @@ async fn gps_task(rx: UartRx<'static, embassy_stm32::mode::Async>) {
 
     loop {
         let fix = gps.sample().await;
+        GPS_FIX.sender().send(fix);
         if fix.valid {
             info!(
                 "gps fix: {} , {} @ {} m/s, {} deg",
@@ -96,6 +139,12 @@ async fn wind_sensor_task(
     loop {
         let reading = sensor.sample().await;
         wind.update(reading);
+
+        APPARENT_WIND.sender().send(WindReading {
+            speed_mps: wind.filtered_speed(),
+            direction_deg: wind.filtered_direction(),
+            valid: wind.is_valid(),
+        });
 
         if wind.is_valid() {
             info!(

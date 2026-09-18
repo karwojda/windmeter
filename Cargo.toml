@@ -45,6 +45,7 @@ embassy-time = { version = "0.5", features = ["defmt", "defmt-timestamp-uptime"]
 cortex-m = { version = "0.7.7", features = ["critical-section-single-core"], optional = true }
 embassy-stm32 = { version = "0.6.0", features = ["defmt", "stm32h723zg", "time-driver-tim2", "exti", "memory-x", "unstable-pac", "chrono" ], optional = true }
 embedded-test = { version = "0.7.1", features = ["embassy"], optional = true } # Enables async test support
+libm = "0.2.16"
 
 [features]
 # Preserve previous embedded behaviour by making it the default feature.

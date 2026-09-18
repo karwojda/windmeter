@@ -85,7 +85,7 @@
 
 ### Task 3 [checkpoint]: See true wind computed live
 
-- [ ] **Goal**: Combine live apparent wind (Task 1) and GPS fix (Task 2) into true wind via the `domain.sysml` formula, printed over RTT; either input invalid -> true wind flagged invalid, not computed from bad data.
+- [~] **Goal**: Combine live apparent wind (Task 1) and GPS fix (Task 2) into true wind via the `domain.sysml` formula, printed over RTT; either input invalid -> true wind flagged invalid, not computed from bad data.
 - **Focus**: AC 1 -- arithmetic correctness against `domain.sysml`'s `trueWind = apparentWind - velocityOverGround`, spot-checked against known cases.
 - **Touches**: `src/wind_compute.rs` (new), `src/bin/wind_meter.rs` (wire the `embassy-sync` channels from Tasks 1-2).
 - **Depends on**: Task 1, Task 2
