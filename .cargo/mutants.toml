@@ -1,0 +1,10 @@
+# cargo-mutants config -- see https://mutants.rs/
+#
+# `src/bin/wind_meter.rs` requires the `embedded` feature and the
+# thumbv7em-none-eabihf target; it can't build (let alone run tests) on
+# the host, so it's excluded rather than showing up as spurious "build
+# failed" mutants. Host-testable code (src/lib.rs and its modules) is
+# built the same way CI verifies it: `--no-default-features` (see
+# WHITTLESPEC.md's verification binding).
+exclude_globs = ["src/bin/*.rs"]
+additional_cargo_args = ["--no-default-features"]

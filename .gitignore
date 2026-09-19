@@ -4,3 +4,7 @@
 
 .venv/**
 **/output/**
+
+# cargo-mutants output
+/mutants.out/
+/mutants.out.old/

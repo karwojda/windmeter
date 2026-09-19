@@ -14,6 +14,10 @@ Host-side unit/integration tests (this crate's `lib`/`tests` target with the
   hardware, so they are not part of the automated gate — run manually before
   shipping a hardware-affecting change.
 
+Test *quality* (coverage, mutation testing) is a separate, periodic check,
+not part of this per-task gate — see `PROJECT_PRINCIPLES.md` § Test Quality
+for `cargo-llvm-cov`/`cargo-mutants` usage.
+
 ## Durability
 Binding: git commit; timing: per-task
 
