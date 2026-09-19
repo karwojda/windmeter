@@ -47,3 +47,57 @@ impl<const N: usize> MovingAverage<N> {
         self.sum = 0.0;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accumulates_average_while_filling() {
+        let mut ma: MovingAverage<2> = MovingAverage::new();
+        assert_eq!(ma.update(2.0), 2.0); // sum=2, count=1
+        assert_eq!(ma.update(4.0), 3.0); // sum=6, count=2
+    }
+
+    #[test]
+    fn wraps_and_evicts_oldest_sample_once_full() {
+        let mut ma: MovingAverage<3> = MovingAverage::new();
+        ma.update(1.0);
+        ma.update(2.0);
+        ma.update(3.0); // window full: [1, 2, 3], avg = 2.0
+        // Window is full; this must evict 1.0 (the oldest), not just
+        // accumulate onto count=4. Window becomes [2, 3, 4], avg = 3.0 --
+        // a plain running average of all 4 values would give 2.5 instead,
+        // and a broken ring-buffer index would corrupt which slot gets
+        // overwritten, giving yet another wrong value.
+        let avg = ma.update(4.0);
+        assert!((avg - 3.0).abs() < 1e-6, "expected 3.0, got {avg}");
+    }
+
+    #[test]
+    fn continues_evicting_correctly_across_multiple_wraps() {
+        // Exercises the ring index cycling through 0,1,2,0,1,... more than
+        // once, not just the first wrap.
+        let mut ma: MovingAverage<3> = MovingAverage::new();
+        for v in [10.0, 20.0, 30.0, 40.0, 50.0, 60.0] {
+            ma.update(v);
+        }
+        // Window should now hold the last 3 values: [40, 50, 60].
+        assert!((ma.update(70.0) - 60.0).abs() < 1e-6); // [50,60,70] -> 60.0
+    }
+
+    #[test]
+    fn reset_clears_accumulated_state() {
+        let mut ma: MovingAverage<3> = MovingAverage::new();
+        ma.update(10.0);
+        ma.update(20.0); // sum=30, count=2 -- still mid-fill (count < N)
+
+        ma.reset();
+
+        // If reset() were a no-op, count would still be 2 (< N=3), so this
+        // call would take the fill branch and land on (30+5)/3 ~= 11.67
+        // instead of a fresh 5.0/1 = 5.0.
+        let avg = ma.update(5.0);
+        assert!((avg - 5.0).abs() < 1e-6, "expected 5.0, got {avg}");
+    }
+}
