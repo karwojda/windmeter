@@ -30,6 +30,13 @@ pub enum WindReference {
 
 /// Builds the 29-bit extended CAN ID for a PGN 130306 broadcast from this
 /// device (PDU2/broadcast format: priority | PGN | source address).
+///
+/// Mutation testing flags both `|` operators here as "missed" if
+/// replaced with `^` -- that's a true equivalent mutant, not a test
+/// gap: priority occupies bits 26-28, `WIND_DATA_PGN` bits 8-25, and
+/// `source_address: u8` can only ever set bits 0-7, so the three fields
+/// never share a set bit for any possible input, making `|` and `^`
+/// identical for every input this function can ever receive.
 pub fn can_id(source_address: u8) -> u32 {
     ((WIND_DATA_PRIORITY as u32) << 26) | (WIND_DATA_PGN << 8) | source_address as u32
 }
@@ -49,7 +56,7 @@ pub fn encode_wind_data(true_wind: WindReading, sid: u8) -> [u8; 8] {
 
     let (speed_raw, angle_raw) = if true_wind.valid {
         let speed_raw = libm::roundf(true_wind.speed_mps / 0.01).clamp(0.0, 0xFFFEu16 as f32) as u16;
-        let angle_rad = normalize_rad(to_radians(true_wind.direction_deg));
+        let angle_rad = crate::angle::normalize(to_radians(true_wind.direction_deg), 2.0 * core::f32::consts::PI);
         let angle_raw = libm::roundf(angle_rad / 0.0001).clamp(0.0, 0xFFFEu16 as f32) as u16;
         (speed_raw, angle_raw)
     } else {
@@ -58,6 +65,12 @@ pub fn encode_wind_data(true_wind: WindReading, sid: u8) -> [u8; 8] {
 
     let reference = WindReference::True as u8;
 
+    // `reference & 0x0F | 0xF0` -- with `WindReference` currently having
+    // only the `True = 0` variant, `reference` is always 0 here, which
+    // makes `| 0xF0` and `^ 0xF0` equivalent (0 is the identity for XOR)
+    // -- a true equivalent mutant, not a test gap, *for now*. It stops
+    // being equivalent the day a second `WindReference` variant is added
+    // and actually used, since XOR would then flip bits `|` wouldn't.
     [
         sid,
         (speed_raw & 0xFF) as u8,
@@ -72,15 +85,6 @@ pub fn encode_wind_data(true_wind: WindReading, sid: u8) -> [u8; 8] {
 
 fn to_radians(deg: f32) -> f32 {
     deg * (core::f32::consts::PI / 180.0)
-}
-
-fn normalize_rad(rad: f32) -> f32 {
-    let two_pi = 2.0 * core::f32::consts::PI;
-    let mut r = rad % two_pi;
-    if r < 0.0 {
-        r += two_pi;
-    }
-    r
 }
 
 #[cfg(feature = "embedded")]
@@ -130,7 +134,11 @@ mod tests {
         assert_eq!(speed_raw, 500);
         let angle_raw = u16::from_le_bytes([frame[3], frame[4]]);
         assert!((angle_raw as i32 - 15708).abs() <= 1);
-        assert_eq!(frame[5] & 0x0F, WindReference::True as u8);
+        // Full byte, not just the low nibble: the previous version of
+        // this assertion (`frame[5] & 0x0F == 0`) couldn't tell a
+        // correctly-built 0xF0 from a mangled 0x00, since both have a
+        // zero low nibble.
+        assert_eq!(frame[5], 0xF0);
     }
 
     #[test]

@@ -20,7 +20,7 @@ pub fn compute_true_wind(apparent: WindReading, gps: GpsFix) -> WindReading {
         return WindReading::INVALID;
     }
 
-    let apparent_true_deg = normalize_deg(apparent.direction_deg + gps.cog_deg);
+    let apparent_true_deg = crate::angle::normalize(apparent.direction_deg + gps.cog_deg, 360.0);
     let (aw_east, aw_north) = to_cartesian(apparent.speed_mps, apparent_true_deg);
     let (bv_east, bv_north) = to_cartesian(gps.sog_mps, gps.cog_deg);
 
@@ -29,7 +29,7 @@ pub fn compute_true_wind(apparent: WindReading, gps: GpsFix) -> WindReading {
 
     WindReading {
         speed_mps: sqrt(tw_east * tw_east + tw_north * tw_north),
-        direction_deg: normalize_deg(atan2_deg(tw_east, tw_north)),
+        direction_deg: crate::angle::normalize(atan2_deg(tw_east, tw_north), 360.0),
         valid: true,
     }
 }
@@ -43,14 +43,6 @@ fn to_cartesian(speed: f32, bearing_deg: f32) -> (f32, f32) {
 /// atan2(east, north) as a compass bearing in degrees, unnormalized.
 fn atan2_deg(east: f32, north: f32) -> f32 {
     to_degrees(atan2(east, north))
-}
-
-fn normalize_deg(deg: f32) -> f32 {
-    let mut d = deg % 360.0;
-    if d < 0.0 {
-        d += 360.0;
-    }
-    d
 }
 
 fn to_radians(deg: f32) -> f32 {
@@ -98,6 +90,23 @@ mod tests {
             cog_deg: cog,
             valid: true,
         }
+    }
+
+    #[test]
+    fn boat_and_apparent_wind_off_axis_from_each_other() {
+        // Every other test here uses a boat COG of 0 (or 0 SOG), which
+        // makes the boat-velocity vector's east component zero -- so
+        // `aw_east - bv_east` and `aw_east + bv_east` land on the same
+        // number, and mutating the subtraction to addition goes
+        // undetected. Also uses a nonzero apparent-direction/COG pair so
+        // rotating by +cog vs -cog produces different results too.
+        // Expected values hand-computed via the same formula in Python
+        // (not re-derived from the implementation under test).
+        let apparent = wind(10.0, 45.0);
+        let true_wind = compute_true_wind(apparent, fix(5.0, 30.0));
+        assert!(true_wind.valid);
+        assert!((true_wind.speed_mps - 7.3681).abs() < 0.01);
+        assert!((true_wind.direction_deg - 103.6751).abs() < 0.1);
     }
 
     #[test]

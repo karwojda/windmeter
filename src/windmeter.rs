@@ -106,9 +106,13 @@ mod tests {
 
     #[test]
     fn direction_passes_through_latest_valid_reading() {
+        // 45.0, not 1.0: a value distinct from any constant a mutant
+        // might substitute (an earlier version of this test happened to
+        // expect exactly 1.0, which let a "replace filtered_direction()
+        // with 1.0" mutant pass undetected).
         let mut wind: Wind<4> = Wind::new();
         wind.update(valid(1.0, 359.0));
-        wind.update(valid(1.0, 1.0));
-        assert!((wind.filtered_direction() - 1.0).abs() < 1e-6);
+        wind.update(valid(1.0, 45.0));
+        assert!((wind.filtered_direction() - 45.0).abs() < 1e-6);
     }
 }

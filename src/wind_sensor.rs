@@ -147,18 +147,10 @@ impl ApparentWindSampler {
 
         WindReading {
             speed_mps,
-            direction_deg: normalize_deg(raw_deg),
+            direction_deg: crate::angle::normalize(raw_deg, 360.0),
             valid: true,
         }
     }
-}
-
-fn normalize_deg(deg: f32) -> f32 {
-    let mut d = deg % 360.0;
-    if d < 0.0 {
-        d += 360.0;
-    }
-    d
 }
 
 #[cfg(feature = "embedded")]
@@ -265,10 +257,24 @@ mod tests {
     #[test]
     fn converts_pulse_count_to_speed() {
         let mut sampler = ApparentWindSampler::new(calibration());
-        // 10 pulses in a 1s window -> 10 Hz -> 10 * (2.4/3.6) ~= 6.667 m/s.
-        let reading = sampler.sample(10, 0, 1.0);
+        // 10 pulses in a 2s window -> 5 Hz (not 1s/10Hz: that would make
+        // pulse_count / sample_period_s indistinguishable from
+        // pulse_count * sample_period_s, since dividing and multiplying
+        // by 1.0 are the same thing) -> 5 * (2.4/3.6) ~= 3.333 m/s.
+        let reading = sampler.sample(10, 0, 2.0);
         assert!(reading.valid);
-        assert!((reading.speed_mps - 6.667).abs() < 0.01);
+        assert!((reading.speed_mps - 3.333).abs() < 0.01);
+    }
+
+    #[test]
+    fn ties_in_the_vane_table_resolve_to_the_first_matching_entry() {
+        let mut sampler = ApparentWindSampler::new(calibration());
+        // ADC 439 is exactly equidistant (67) from the 90-degree entry
+        // (372) and the 157.5-degree entry (506) -- the two closest
+        // table entries to it. A tie must not flip the result to the
+        // later entry.
+        let reading = sampler.sample(1, 439, 1.0);
+        assert!((reading.direction_deg - 90.0).abs() < 0.01);
     }
 
     #[test]

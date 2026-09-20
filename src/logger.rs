@@ -150,6 +150,37 @@ pub use hardware::DataLogger;
 mod tests {
     use super::*;
 
+    #[test]
+    fn write_str_succeeds_when_exactly_filling_capacity() {
+        // Boundary case for `self.len + bytes.len() > self.buf.len()`:
+        // distinguishes `>` from `>=` (an exact fill must succeed).
+        let mut buf = [0u8; 5];
+        let mut w = BufWriter { buf: &mut buf, len: 0 };
+        assert!(w.write_str("hello").is_ok());
+        assert_eq!(w.len, 5);
+    }
+
+    #[test]
+    fn write_str_fails_when_one_byte_over_capacity() {
+        let mut buf = [0u8; 4];
+        let mut w = BufWriter { buf: &mut buf, len: 0 };
+        assert!(w.write_str("hello").is_err());
+    }
+
+    #[test]
+    fn write_str_accumulates_length_additively_across_calls() {
+        // Distinguishes `self.len + bytes.len()` from `self.len *
+        // bytes.len()`: the first call (len=0) can't tell `+` from `*`
+        // (anything * 0 is 0), so a second call is needed where a
+        // multiplied length would diverge from an added one.
+        let mut buf = [0u8; 4];
+        let mut w = BufWriter { buf: &mut buf, len: 0 };
+        assert!(w.write_str("ab").is_ok());
+        assert!(w.write_str("cd").is_ok());
+        assert!(w.write_str("e").is_err());
+        assert_eq!(&buf, b"abcd");
+    }
+
     fn wind(speed: f32, direction: f32, valid: bool) -> WindReading {
         WindReading {
             speed_mps: speed,
