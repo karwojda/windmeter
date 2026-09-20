@@ -1,25 +1,63 @@
-name: Test Template Generation
+name: CI
 
 on:
   push:
-    # Run on the main branch
     branches:
       - main
-    # Releases are tags named 'v<version>', and must have the "major.minor.micro", for example: "0.1.0".
-    # Release candidates are tagged as `v<version>-rc<num>`, for example: "0.1.0-rc1".
-    tags:
-      - "v*"
-  # Also on PRs, just be careful not to publish anything
   pull_request:
-  # Allow manual triggering
   workflow_dispatch:
 
-
 jobs:
-  ci:
+  verify:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
 
-      - name: Build
-        run: ./ci.sh
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build CI image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile
+          tags: windmeter-ci:local
+          push: false
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Restore cargo registry cache
+        uses: actions/cache@v5
+        with:
+          path: .ci-cargo-registry
+          key: cargo-registry-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-
+
+      # SysML model validation, host tests, coverage (gated, see
+      # ci/verify.sh), and the embedded (STM32H723ZG) build -- all in one
+      # step so a failure's exact point is visible directly in this
+      # step's log. Deliberately does NOT run cargo-mutants: a full-crate
+      # mutation run takes tens of minutes, too expensive for every
+      # push/PR. Run it locally instead (PROJECT_PRINCIPLES.md § Test
+      # Quality).
+      - name: Verify (sysml, tests, coverage, embedded build)
+        run: |
+          mkdir -p .ci-cargo-registry
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -v "$PWD":/workspace \
+            -v "$PWD/.ci-cargo-registry":/usr/local/cargo/registry \
+            -w /workspace \
+            -e CARGO_TERM_COLOR=always \
+            windmeter-ci:local \
+            ./ci/verify.sh
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lcov.info
+          path: lcov.info
+          if-no-files-found: ignore

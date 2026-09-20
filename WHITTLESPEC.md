@@ -18,6 +18,11 @@ Test *quality* (coverage, mutation testing) is a separate, periodic check,
 not part of this per-task gate — see `PROJECT_PRINCIPLES.md` § Test Quality
 for `cargo-llvm-cov`/`cargo-mutants` usage.
 
+CI (`.github/workflows/ci.yaml`) runs the first three of the above (sysml
+validate, host tests, embedded build) plus a coverage gate on every push/PR
+— see `PROJECT_PRINCIPLES.md` § CI. It does not run `cargo-mutants` or the
+on-target hardware tests.
+
 ## Durability
 Binding: git commit; timing: per-task
 

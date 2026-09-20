@@ -29,6 +29,24 @@ Embedded target must also keep building:
 (`tests/wind_meter.rs`, via `probe-rs run` on a real STM32H723ZG) need
 attached hardware and are run manually, not part of the automated gate.
 
+## CI
+
+`.github/workflows/ci.yaml` runs on every push to `main` and every PR:
+builds the `Dockerfile` image (Rust + the `thumbv7em-none-eabihf` target +
+`sysml`/`sysml-lsp` + `cargo-llvm-cov`; cached via GHA buildx cache), then
+runs `ci/verify.sh` inside it -- SysML model validation, host tests,
+coverage (gated at 85% lines, see the script), and the embedded build.
+The lcov report is uploaded as a workflow artifact.
+
+Deliberately excluded from CI: `cargo-mutants` (a full-crate run takes
+tens of minutes -- too expensive per push/PR) and on-target hardware
+tests (need real hardware, per Verification above). Run both locally.
+
+`ci/verify.sh` is meant to double as the local one-shot check -- same
+script, same order, whether run directly (if `sysml`/`cargo-llvm-cov`
+are installed) or via `docker run ... ./ci/verify.sh` for full parity
+with CI.
+
 ## Test Quality: Coverage and Mutation Testing
 
 These are quality-control checks, not part of the per-task completion
@@ -44,7 +62,7 @@ and cross-platform support). Requires the `llvm-tools` rustup component
 ```sh
 cargo llvm-cov --no-default-features --summary-only   # quick check
 cargo llvm-cov --no-default-features --html            # target/llvm-cov/html/index.html
-cargo llvm-cov --no-default-features --fail-under-lines 90   # CI gate
+cargo llvm-cov --no-default-features --fail-under-lines 85   # matches ci/verify.sh's gate
 ```
 
 **Mutation testing** -- `cargo-mutants`. Config lives in

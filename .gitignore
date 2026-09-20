@@ -8,3 +8,7 @@
 # cargo-mutants output
 /mutants.out/
 /mutants.out.old/
+
+# coverage / CI-local artifacts
+/lcov.info
+/.ci-cargo-registry/
