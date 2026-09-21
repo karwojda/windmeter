@@ -14,8 +14,9 @@
 /lcov.info
 /.ci-cargo-registry/
 
-# `cargo run --bin simulate` default output
+# `cargo run --bin simulate` default output, and its default visualization
 /simulate_log.csv
+/simulate_log.html
 
 #opensysml artifacts
 share/man/man1/sysml-lsp.1

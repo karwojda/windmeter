@@ -81,6 +81,20 @@ either dead code, or a real gap in what the tests actually assert. Not
 every miss is worth chasing (e.g. a missed `Debug` derive mutant is
 usually noise); use judgment.
 
+## Simulating and Visualizing a Log Without Hardware
+
+`cargo run --no-default-features --features sim --bin simulate [output.csv]`
+runs the real sense -> compute -> log pipeline against synthetic data (no
+hardware needed) and writes a CSV in the same format a real SD card log
+would have (`LogRecord::CSV_HEADER`, `src/logger.rs`). Gated behind the
+`sim` feature, which nothing else enables, so it can't leak into the
+embedded build or `cargo test`/`cargo llvm-cov` (see `tasks.md` Task 6).
+
+`scripts/visualize_log.py <log.csv>` plots either that simulated output or
+a real pulled-card log -- speed, direction, and GPS speed-over-ground each
+in their own panel (different units, never share an axis). Needs
+pandas + plotly, already in `.venv` (`.venv/bin/python scripts/visualize_log.py ...`).
+
 ## SysML Conventions
 
 `part def` / `item def` / `attribute def` / `requirement def` names are
