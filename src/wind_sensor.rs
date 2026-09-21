@@ -30,22 +30,33 @@ pub trait WindSensor {
 
 /// Calibration constants for a cup-and-vane sensor.
 ///
-/// Defaults below match the Argent Data Systems / SparkFun Weather Meter
-/// Kit (SEN-15901) selected for this project -- see `system.sysml`'s
-/// `CupAndVaneWindSensor` doc and `PROJECT_PRINCIPLES.md` for sourcing.
-/// `direction_offset_deg` is still installation-specific (depends on how
-/// the vane is mounted relative to the boat's centerline) -- see
-/// `tasks.md` Task 1 for the pending hardware verification pass.
+/// Defaults below match the Davis Instruments 6410 (Vantage Pro2
+/// anemometer/vane) selected for this project -- see `system.sysml`'s
+/// `CupAndVaneWindSensor` doc and `hardware-sourcing.md` for the
+/// comparison against the earlier SEN-15901 choice and why it changed
+/// (ruggedness: stainless steel bearings, 200 mph wind-tunnel tested,
+/// field-proven 10+ year lifespans, vs SEN-15901's unspecified-material
+/// bearings and no comparable track record). `direction_offset_deg` is
+/// still installation-specific (depends on how the vane is mounted
+/// relative to the boat's centerline) -- see `tasks.md` Task 1 for the
+/// pending hardware verification pass.
 #[derive(Debug, Clone, Copy)]
 pub struct WindCalibration {
-    /// Wind speed (m/s) per Hz of anemometer pulses. 2.4 km/h per
-    /// switch-closure/second, per the Weather Meter Kit's documented
-    /// anemometer calibration -> 2.4/3.6 = 0.6667 m/s per Hz.
+    /// Wind speed (m/s) per Hz of anemometer pulses. Davis's documented
+    /// constant is 2.25 mph per Hz -> 2.25 * 0.44704 m/s per mph.
     pub mps_per_hz: f32,
     /// Degrees added to the raw direction reading to correct for mounting
     /// alignment (vane's "0" position relative to the boat's centerline).
     /// TODO: calibrate on install.
     pub direction_offset_deg: f32,
+    /// Maximum raw ADC value the direction pot's full 0..360 sweep maps
+    /// to (e.g. 4095 for a 12-bit ADC). Unlike SEN-15901's discrete
+    /// resistor-ladder vane, the Davis 6410's is a continuous
+    /// potentiometer, so direction is a linear scale, not a lookup
+    /// table. TODO: confirm against real hardware -- Davis's vane may
+    /// have a small dead zone at the wrap-around point that a purely
+    /// linear model doesn't account for.
+    pub adc_max: u16,
     /// Consecutive zero-pulse samples before a reading is flagged invalid.
     /// A genuinely calm wind also produces zero pulses, so this is a
     /// deliberate tradeoff: a long enough calm spell reads as "invalid"
@@ -55,58 +66,24 @@ pub struct WindCalibration {
 }
 
 impl WindCalibration {
-    /// Weather Meter Kit defaults: anemometer constant from the
-    /// datasheet (exact), no direction offset applied yet (calibrate on
-    /// install), a 5-sample stale window.
-    pub const fn weather_meter_kit_defaults() -> Self {
+    /// Davis 6410 defaults: anemometer constant from the datasheet
+    /// (exact), no direction offset applied yet (calibrate on install),
+    /// a 5-sample stale window.
+    pub const fn davis_6410_defaults() -> Self {
         Self {
-            mps_per_hz: 2.4 / 3.6,
+            mps_per_hz: 2.25 * 0.44704,
             direction_offset_deg: 0.0,
+            adc_max: 4095,
             stale_after_samples: 5,
         }
     }
 }
 
-/// The Weather Meter Kit's wind vane is a resistor ladder (8 reed
-/// switches, up to 16 resolvable positions), not a continuous
-/// potentiometer -- direction is decoded by nearest-match against known
-/// ADC codes, not a linear scale. Table entries are 12-bit ADC codes
-/// (0..4095) derived from the vane's documented per-direction resistance,
-/// assuming the standard circuit: a 10k-ohm external pull resistor from
-/// 3.3V to the ADC pin, with the vane's internal resistance from that pin
-/// to ground. Both the pull resistor value and the ADC's 12-bit
-/// resolution need confirming once real hardware is in hand (see
-/// `tasks.md`) -- these are calculated from the datasheet, not measured.
-const VANE_ADC_TABLE: [(u16, f32); 16] = [
-    (3143, 0.0),
-    (1624, 22.5),
-    (1845, 45.0),
-    (335, 67.5),
-    (372, 90.0),
-    (264, 112.5),
-    (738, 135.0),
-    (506, 157.5),
-    (1149, 180.0),
-    (979, 202.5),
-    (2520, 225.0),
-    (2397, 247.5),
-    (3780, 270.0),
-    (3309, 292.5),
-    (3548, 315.0),
-    (2810, 337.5),
-];
-
-fn adc_to_direction_deg(adc: u16) -> f32 {
-    let mut best_deg = VANE_ADC_TABLE[0].1;
-    let mut best_dist = i32::MAX;
-    for &(table_adc, deg) in VANE_ADC_TABLE.iter() {
-        let dist = (adc as i32 - table_adc as i32).abs();
-        if dist < best_dist {
-            best_dist = dist;
-            best_deg = deg;
-        }
-    }
-    best_deg
+/// Davis 6410's wind vane is a continuous ~20k-ohm potentiometer (not a
+/// discrete resistor ladder like SEN-15901's), so direction is a
+/// straight linear scale across the ADC's full range.
+fn adc_to_direction_deg(adc: u16, adc_max: u16) -> f32 {
+    (adc as f32 / adc_max.max(1) as f32) * 360.0
 }
 
 /// Pure, host-testable calibration/calculation core: turns raw pulse
@@ -143,7 +120,7 @@ impl ApparentWindSampler {
         let hz = pulse_count as f32 / sample_period_s;
         let speed_mps = hz * self.calibration.mps_per_hz;
 
-        let raw_deg = adc_to_direction_deg(direction_adc) + self.calibration.direction_offset_deg;
+        let raw_deg = adc_to_direction_deg(direction_adc, self.calibration.adc_max) + self.calibration.direction_offset_deg;
 
         WindReading {
             speed_mps,
@@ -250,7 +227,7 @@ mod tests {
     fn calibration() -> WindCalibration {
         WindCalibration {
             stale_after_samples: 3,
-            ..WindCalibration::weather_meter_kit_defaults()
+            ..WindCalibration::davis_6410_defaults()
         }
     }
 
@@ -260,38 +237,29 @@ mod tests {
         // 10 pulses in a 2s window -> 5 Hz (not 1s/10Hz: that would make
         // pulse_count / sample_period_s indistinguishable from
         // pulse_count * sample_period_s, since dividing and multiplying
-        // by 1.0 are the same thing) -> 5 * (2.4/3.6) ~= 3.333 m/s.
+        // by 1.0 are the same thing) -> 5 * (2.25 mph/Hz * 0.44704) ~=
+        // 5.029 m/s.
         let reading = sampler.sample(10, 0, 2.0);
         assert!(reading.valid);
-        assert!((reading.speed_mps - 3.333).abs() < 0.01);
+        assert!((reading.speed_mps - 5.029).abs() < 0.01);
     }
 
     #[test]
-    fn ties_in_the_vane_table_resolve_to_the_first_matching_entry() {
+    fn converts_adc_to_direction_linearly() {
         let mut sampler = ApparentWindSampler::new(calibration());
-        // ADC 439 is exactly equidistant (67) from the 90-degree entry
-        // (372) and the 157.5-degree entry (506) -- the two closest
-        // table entries to it. A tie must not flip the result to the
-        // later entry.
-        let reading = sampler.sample(1, 439, 1.0);
-        assert!((reading.direction_deg - 90.0).abs() < 0.01);
+        // Continuous potentiometer (not SEN-15901's discrete ladder) --
+        // quarter-scale ADC lands at ~90 degrees, a straight linear scale.
+        let reading = sampler.sample(1, 1024, 1.0);
+        assert!((reading.direction_deg - 90.0).abs() < 0.5);
     }
 
     #[test]
-    fn converts_adc_to_direction_degrees_via_vane_table() {
+    fn full_scale_adc_wraps_to_zero_not_360() {
         let mut sampler = ApparentWindSampler::new(calibration());
-        // Table entry for 180 degrees is ADC 1149 exactly.
-        let reading = sampler.sample(1, 1149, 1.0);
-        assert!((reading.direction_deg - 180.0).abs() < 0.01);
-    }
-
-    #[test]
-    fn nearest_matches_an_off_table_adc_value() {
-        let mut sampler = ApparentWindSampler::new(calibration());
-        // 1150 is 1 away from the 180-degree entry (1149) and much
-        // farther from any other -- should still resolve to 180.
-        let reading = sampler.sample(1, 1150, 1.0);
-        assert!((reading.direction_deg - 180.0).abs() < 0.01);
+        // adc_max maps to exactly 360 degrees raw, which must normalize
+        // to 0 -- direction is always in [0, 360).
+        let reading = sampler.sample(1, 4095, 1.0);
+        assert!(reading.direction_deg < 1.0);
     }
 
     #[test]
@@ -299,11 +267,10 @@ mod tests {
         let mut cal = calibration();
         cal.direction_offset_deg = 30.0;
         let mut sampler = ApparentWindSampler::new(cal);
-        // Table's 337.5-degree entry (ADC 2810) + 30 deg offset should
-        // wrap to 7.5, not 367.5.
-        let reading = sampler.sample(1, 2810, 1.0);
+        // Max ADC (360 deg raw) + 30 deg offset should wrap to ~30, not 390.
+        let reading = sampler.sample(1, 4095, 1.0);
         assert!(reading.direction_deg < 360.0);
-        assert!((reading.direction_deg - 7.5).abs() < 0.01);
+        assert!((reading.direction_deg - 30.0).abs() < 0.5);
     }
 
     #[test]
@@ -326,7 +293,7 @@ mod tests {
         assert!(!sampler.sample(0, 0, 1.0).valid);
         let reading = sampler.sample(4, 0, 1.0);
         assert!(reading.valid);
-        // 4 Hz * (2.4/3.6 m/s per Hz) ~= 2.667 m/s.
-        assert!((reading.speed_mps - 2.667).abs() < 0.01);
+        // 4 Hz * (2.25 mph/Hz * 0.44704) ~= 4.023 m/s.
+        assert!((reading.speed_mps - 4.023).abs() < 0.01);
     }
 }

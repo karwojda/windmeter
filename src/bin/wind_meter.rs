@@ -209,15 +209,21 @@ async fn gps_task(rx: UartRx<'static, embassy_stm32::mode::Async>) {
 /// REQ-001: reads the cup-and-vane sensor once per sample period, smooths
 /// it (`Wind<N>`), and prints the live apparent-wind reading -- or that
 /// it's currently invalid -- over RTT.
+///
+/// WIRING: the Davis 6410 vane's potentiometer must be powered from the
+/// board's 3.3V rail, NOT the datasheet's nominal 5V -- see
+/// hardware-sourcing.md § Wiring. It's a passive resistor, so 3.3V just
+/// rescales its 0..360 deg sweep to a 0..3.3V wiper output; wiring the
+/// datasheet's 5V would risk exceeding this ADC pin's rated input range.
 #[embassy_executor::task]
 async fn wind_sensor_task(
     pulse_pin: ExtiInput<'static, embassy_stm32::mode::Async>,
     direction_adc: Adc<'static, peripherals::ADC1>,
     direction_pin: Peri<'static, peripherals::PA1>,
 ) {
-    // Weather Meter Kit (SEN-15901) calibration -- direction_offset_deg
-    // still needs confirming against actual mounting (tasks.md Task 1).
-    let calibration = WindCalibration::weather_meter_kit_defaults();
+    // Davis 6410 calibration -- direction_offset_deg still needs
+    // confirming against actual mounting (tasks.md Task 1).
+    let calibration = WindCalibration::davis_6410_defaults();
     const SAMPLE_PERIOD_S: f32 = 1.0;
 
     let mut sensor = CupAndVaneWindSensor::new(pulse_pin, direction_adc, direction_pin, calibration, SAMPLE_PERIOD_S);

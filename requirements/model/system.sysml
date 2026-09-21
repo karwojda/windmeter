@@ -37,14 +37,19 @@ package WindMeterSystem {
 
     part def CupAndVaneWindSensor :> WindSensor {
         doc /* Initial hardware: pulse (reed/Hall) anemometer for speed,
-             * a resistor-ladder wind vane for direction (8 reed switches,
-             * up to 16 resolvable positions - not a continuous pot).
+             * a continuous potentiometer wind vane for direction.
              *
-             * Selected: Argent Data Systems / SparkFun Weather Meter Kit
-             * (SEN-15901) - anemometer 2.4 km/h per switch-closure/second;
-             * vane resistance table documented in the manufacturer
-             * datasheet. See src/wind_sensor.rs for the derived
-             * calibration/lookup table. */
+             * Selected: Davis Instruments 6410 (Vantage Pro2 anemometer +
+             * vane) - stainless steel bearings, 200 mph wind-tunnel
+             * tested, field-proven 10+ year lifespans (incl. DIY marine/
+             * boat use). Chosen over the initially-picked Argent Data
+             * Systems / SparkFun Weather Meter Kit (SEN-15901) for
+             * ruggedness - see hardware-sourcing.md for the comparison
+             * against SEN-15901 and other boat-specific options (Garmin
+             * GWS 10, B&G 508) considered and not chosen. Anemometer
+             * constant 2.25 mph per pulse/second; vane is a linear ~20k
+             * ohm pot, not a resistor ladder. See src/wind_sensor.rs for
+             * the calibration. */
     }
 
     part def UltrasonicWindSensor :> WindSensor {
