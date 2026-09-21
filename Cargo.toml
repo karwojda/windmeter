@@ -9,6 +9,19 @@ test = false
 bench = false
 required-features = ["embedded"]
 
+# Host-only: runs the same sense -> compute -> log pipeline against
+# synthetic data (no hardware). `required-features = ["sim"]` -- a
+# feature nothing else enables -- keeps it out of both
+# `cargo build --target thumbv7em-none-eabihf` (embedded, needs no_std;
+# this bin uses std) and `cargo test`/`cargo llvm-cov` (host, but this
+# is an opt-in tool, not part of the test suite). Run it explicitly:
+# `cargo run --no-default-features --features sim --bin simulate`.
+[[bin]]
+name = "simulate"
+test = false
+bench = false
+required-features = ["sim"]
+
 [lib]
 # enable test harness on host so `cargo test` uses the standard test harness
 harness = true
@@ -71,6 +84,9 @@ embedded = [
     "embedded-sdmmc",
     "embedded-hal-bus",
 ]
+# Enables the `simulate` bin. Deliberately not in `default` or
+# `embedded` -- see the [[bin]] comment above.
+sim = []
 
 [dev-dependencies]
 
