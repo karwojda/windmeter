@@ -29,8 +29,12 @@ fn main() {
     // `memory.x` is changed.
     println!("cargo:rerun-if-changed=memory.x");
 
-    println!("cargo:rustc-link-arg-bins=--nmagic");
-    println!("cargo:rustc-link-arg-bins=-Tlink.x");
-    println!("cargo::rustc-link-arg-tests=-Tembedded-test.x");
-    println!("cargo:rustc-link-arg-bins=-Tdefmt.x");
+    // Emit linker args only when building with the `embedded` feature enabled.
+    let is_embedded = env::var("CARGO_FEATURE_EMBEDDED").is_ok();
+    if is_embedded {
+        println!("cargo:rustc-link-arg-bins=--nmagic");
+        println!("cargo:rustc-link-arg-bins=-Tlink.x");
+        println!("cargo:rustc-link-arg-tests=-Tembedded-test.x");
+        println!("cargo:rustc-link-arg-bins=-Tdefmt.x");
+    }
 }

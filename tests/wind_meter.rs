@@ -1,3 +1,4 @@
+#![cfg(feature = "embedded")]
 #![no_std]
 #![no_main]
 

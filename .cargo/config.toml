@@ -1,12 +1,13 @@
 [target.'cfg(all(target_arch = "arm", target_os = "none"))']
 runner = "probe-rs run --chip STM32H723ZG"
 
-rustflags = [
-  "-C", "link-arg=-Tembedded-test.x"
-]
 
-[build]
-target = "thumbv7em-none-eabihf"
+# Default build target removed to allow host testing with `cargo test`.
+# To build for the embedded target (STM32H723ZG), set the target explicitly when building
+# or restore the `build.target` setting below.
+#
+# [build]
+# target = "thumbv7em-none-eabihf"
 
 [env]
 DEFMT_LOG = "trace"

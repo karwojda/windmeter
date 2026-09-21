@@ -4,6 +4,7 @@
 
 .venv/**
 **/output/**
+.vscode/**
 
 # cargo-mutants output
 /mutants.out/
@@ -12,3 +13,7 @@
 # coverage / CI-local artifacts
 /lcov.info
 /.ci-cargo-registry/
+
+#opensysml artifacts
+share/man/man1/sysml-lsp.1
+share/man/man1/sysml.1
