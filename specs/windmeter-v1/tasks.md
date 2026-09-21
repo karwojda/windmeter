@@ -2,7 +2,7 @@
 
 ## Implementation Constraints
 
-**Permitted**: Libraries: `embassy-stm32` (FDCAN -- no separate `can` feature flag, discovered during Task 5: it compiles in automatically for this chip, unlike originally assumed), `embedded-sdmmc`, `nmea0183`, existing `moving_average`/`windmeter` modules. Pattern: Embassy async tasks wired by `embassy-sync` channels (per `plan.md`). Files: `src/`, `src/bin/wind_meter.rs`, `Cargo.toml`. `src/bin/simulate.rs` (Task 6) behind the `sim` Cargo feature -- host-only, uses `std`, must never be reachable from a default-feature or `--no-default-features` build (see its `required-features` in `Cargo.toml`).
+**Permitted**: Libraries: `embassy-stm32` (FDCAN -- no separate `can` feature flag, discovered during Task 5: it compiles in automatically for this chip, unlike originally assumed), `embedded-sdmmc`, `nmea0183`, existing `moving_average`/`windmeter` modules. Pattern: Embassy async tasks wired by `embassy-sync` channels (per `plan.md`). Files: `src/`, `src/bin/wind_meter.rs`, `Cargo.toml`. `src/bin/simulate/{main.rs,scenarios.rs}` (Task 6) behind the `sim` Cargo feature -- host-only, uses `std`, must never be reachable from a default-feature or `--no-default-features` build (see its `required-features` in `Cargo.toml`). New scenarios go in `scenarios.rs` only -- `main.rs`'s pipeline-wiring loop is scenario-agnostic by design.
 
 **Not permitted**: rewriting `moving_average.rs`/`windmeter.rs` from scratch (extend the existing stub, per plan's brownfield note); ultrasonic sensor work (out of scope this cycle); a full N2K stack dependency (`korri-n2k`) unless hand-rolled PGN encoding proves insufficient (plan.md's documented fallback only); introducing a BDD/Gherkin framework (none exists in this crate; see BDD decision on each task).
 
@@ -59,7 +59,7 @@
 ### Task 6 [checkpoint]: Sanity-check the pipeline without hardware
 
 - [x] **Goal**: Wire `wind_sensor` -> `gps` -> `wind_compute` -> `logger` together against synthetic data, in a host-runnable binary, so Tasks 1-4's logic can be checked end to end before hardware is in hand.
-- **Touches**: `src/bin/simulate.rs` (new), `Cargo.toml` (new `sim` feature + `simulate` `[[bin]]`, both gated so they can never be reached by the embedded build or the test/coverage commands).
+- **Touches**: `src/bin/simulate/{main.rs,scenarios.rs}` (new), `Cargo.toml` (new `sim` feature + `simulate` `[[bin]]`, both gated so they can never be reached by the embedded build or the test/coverage commands).
 - **Depends on**: Task 1, Task 2, Task 3, Task 4 (their code, not their hardware verification)
 - **Acceptance**:
   1. Running the binary produces a plain CSV file plus the same rows on stdout: synthetic apparent wind (varying speed/direction, generated as pulse-count/ADC-code pairs -- the sensor's actual output shape, not a shortcut past it), a real NMEA0183 RMC sentence per tick (checksum computed programmatically) fed through the actual parser, computed true wind, all via `LogRecord::format_csv`. -- **Demo**: `cargo run --no-default-features --features sim --bin simulate /tmp/out.csv`, then `cat /tmp/out.csv`.
@@ -67,7 +67,7 @@
 - **Reachability**: N/A -- a dev tool, not a product surface; its output (the CSV) is what tasks 1/2/3/4 now cite as their non-hardware demo.
 - **Tests green after**: N/A (this *is* the manual-inspection tool; its correctness rides on `wind_sensor`/`gps`/`wind_compute`/`logger`'s own unit tests, which it wires together but doesn't re-test).
 - **BDD decision**: do not use -- not applicable: dev tool, no user-facing behavioral contract.
-- **Documentation**: this file (Implementation Constraints) + `src/bin/simulate.rs`'s own doc comment.
+- **Documentation**: this file (Implementation Constraints) + `src/bin/simulate/main.rs`'s and `scenarios.rs`' own doc comments.
 
 **COMPLETION EVIDENCE** (already run, this session):
 1. Production wiring: `simulate` bin calls `ApparentWindSampler`, `GpsFixTracker`, `compute_true_wind`, `LogRecord::format_csv` directly -- same functions the real tasks use, not reimplementations.
@@ -75,6 +75,8 @@
 3. Residual patterns: n/a, new file.
 4. Test suite: `cargo test --no-default-features` unaffected (38/38 still pass); `cargo build --target thumbv7em-none-eabihf` unaffected (clean); `cargo llvm-cov --no-default-features` unaffected (99.60%, `simulate.rs` correctly excluded since coverage doesn't pass `--features sim`).
 5. Persistence: committed (`f842194`).
+
+**2026-09-21 extension**: split into `src/bin/simulate/main.rs` (pipeline wiring, scenario-agnostic) + `scenarios.rs` (named scenarios, `Scenario` enum), selected via `--scenario NAME` (`--list-scenarios` to enumerate). Added a second scenario, `zero-true-wind-accelerating-boat`: true wind held at dead calm while boat speed ramps up in a constant direction. Ran it -- computed true wind came out to ~0.0 +/- up to ~0.5 m/s, not a clean 0.0. Traced this to the anemometer's own pulse-count quantization (`mps_per_hz` ~1.006 m/s per whole pulse at this 1s sample rate) rather than treating it as a bug: the scenario's continuously-ramping target speed can't be hit exactly by an integer pulse count, and the simulated GPS doesn't round nearly as coarsely, so the gap between them *is* the anemometer's real resolution limit, faithfully reproduced. Documented on the `Scenario::ZeroTrueWindAcceleratingBoat` variant rather than silently tuned away. `--list-scenarios`, both scenarios, `cargo test --no-default-features` (38/38), and `cargo build --target thumbv7em-none-eabihf` all re-verified after the split.
 
 ### Task 1 [checkpoint]: See live apparent wind readings
 
@@ -162,7 +164,7 @@
 
 - [x] **Goal**: Format and append apparent wind, true wind, and GPS records; the per-record write path (`append`) doesn't crash on a storage fault (`Result`-returning, no panicking call). **Scope narrowed 2026-09-21**: log-record correctness verified via unit tests + Task 6 (writes the same format to a real plain-text file you can inspect by hand); the physical "runs on battery, survives a real session on a real SD card" claim is Task 4a, deferred -- simulation cannot substitute for a physical power/storage fact.
 - **Focus**: AC 2 -- storage-fault handling must not crash; verified here as an architectural property (no `unwrap`/`panic` in the write path), not a runtime test, since injecting a real card fault needs real hardware (Task 4a).
-- **Touches**: `src/logger.rs` (`embedded-sdmmc` over SPI, real hardware path unchanged), `src/bin/simulate.rs` (Task 6: same `LogRecord`/CSV format, `std::fs::File` instead of `embedded-sdmmc`).
+- **Touches**: `src/logger.rs` (`embedded-sdmmc` over SPI, real hardware path unchanged), `src/bin/simulate/main.rs` (Task 6: same `LogRecord`/CSV format, `std::fs::File` instead of `embedded-sdmmc`).
 - **Depends on**: Task 1, Task 2, Task 3
 - **Acceptance**:
   1. Records format correctly as CSV, including the invalid/false-flags case. -- **Demo**: `cargo test --no-default-features -- logger`; `cargo run --no-default-features --features sim --bin simulate /tmp/out.csv && cat /tmp/out.csv` -- open it by hand, exactly as you'd inspect a pulled SD card's file.
