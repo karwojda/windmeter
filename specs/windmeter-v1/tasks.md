@@ -2,7 +2,7 @@
 
 ## Implementation Constraints
 
-**Permitted**: Libraries: `embassy-stm32` (add the `can` feature), `embedded-sdmmc`, `nmea0183`, existing `moving_average`/`windmeter` modules. Pattern: Embassy async tasks wired by `embassy-sync` channels (per `plan.md`). Files: `src/`, `src/bin/wind_meter.rs`, `Cargo.toml`.
+**Permitted**: Libraries: `embassy-stm32` (FDCAN -- no separate `can` feature flag, discovered during Task 5: it compiles in automatically for this chip, unlike originally assumed), `embedded-sdmmc`, `nmea0183`, existing `moving_average`/`windmeter` modules. Pattern: Embassy async tasks wired by `embassy-sync` channels (per `plan.md`). Files: `src/`, `src/bin/wind_meter.rs`, `Cargo.toml`.
 
 **Not permitted**: rewriting `moving_average.rs`/`windmeter.rs` from scratch (extend the existing stub, per plan's brownfield note); ultrasonic sensor work (out of scope this cycle); a full N2K stack dependency (`korri-n2k`) unless hand-rolled PGN encoding proves insufficient (plan.md's documented fallback only); introducing a BDD/Gherkin framework (none exists in this crate; see BDD decision on each task).
 
@@ -126,7 +126,7 @@
 
 - [~] **Goal**: Confirm the board's CAN peripheral talks to a real NMEA2000 network, then transmit computed wind as the Wind Data PGN (130306) at a regular interval; if real-network CAN proves unreliable, fall back to NMEA0183 (`requirements.md` Decision 1's runner-up) instead; stale/invalid true wind is not sent.
 - **Focus**: AC 1 (feasibility gate + fallback decision -- plan.md's flagged single point of failure for REQ-006) and AC 3 (stale-suppression -- wrong data on a real nav instrument is worse than none).
-- **Touches**: `src/nmea2000.rs` (new: FDCAN config + PGN encoding, or NMEA0183 output module if the fallback triggers), `Cargo.toml` (add `embassy-stm32`'s `can` feature), `src/bin/wind_meter.rs` (wire the task).
+- **Touches**: `src/nmea2000.rs` (new: FDCAN config + PGN encoding, or NMEA0183 output module if the fallback triggers), `src/bin/wind_meter.rs` (wire the task; no `Cargo.toml` feature flag needed -- see Implementation Constraints).
 - **Depends on**: Task 3
 - **Parallel**: yes (alongside Task 4)
 - **Acceptance**:

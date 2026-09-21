@@ -22,9 +22,13 @@ NMEA2000 output is a second slice, sequenced after this: it rides the newer, les
 | `GpsTask` | Parse GPS UART stream into fixes | `nmea0183` crate |
 | `WindComputeTask` | apparent wind + GPS velocity -> true wind (`domain.sysml`) | `embassy-sync` channels from the two tasks above |
 | `LoggerTask` | Append wind+GPS records to SD card | `embedded-sdmmc` over SPI |
-| `Nmea2000Task` | Encode wind PGN, transmit on CAN | `embassy-stm32` FDCAN (`can` feature, not yet enabled) |
+| `Nmea2000Task` | Encode wind PGN, transmit on CAN | `embassy-stm32` FDCAN (compiles in automatically for this chip -- no separate feature flag) |
 
 `src/bin/wind_meter.rs` (currently an unrelated LED/PWM demo) becomes the real `main` that spawns these tasks.
+
+Concrete part selection (which anemometer/GPS/CAN-transceiver/etc. these
+components actually run on, and why) is `context/hardware-sourcing.md`,
+not repeated here.
 
 ## Data Structures
 
@@ -36,7 +40,7 @@ NMEA2000 output is a second slice, sequenced after this: it rides the newer, les
 
 ## Dependencies
 
-- **Requires**: `embassy-stm32` `can` feature, `embedded-sdmmc`, `nmea0183` (all new).
+- **Requires**: `embedded-sdmmc`, `nmea0183` (both new). Originally also listed an `embassy-stm32` `can` feature flag -- Task 5 found no such feature exists; FDCAN support compiles in automatically for this chip.
 - **Affects**: nothing yet (greenfield).
 
 ## Risks
