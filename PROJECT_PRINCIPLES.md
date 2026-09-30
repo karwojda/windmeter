@@ -180,11 +180,15 @@ writes intended (captured from the warnings' logged values). Revisit if
 a later Renode version fixes this and the register-level workaround is
 no longer needed.
 
-**Automated regression test**: `renode/tests/boot.robot` runs the same
-boot-proof as `boot.resc` (repl, RCC hooks, load ELF, run 2s) as a
-Robot Framework test via Renode's own `renode-test` runner, asserting
-no HardFault happened. Needs Renode's bundled test dependencies
-installed once into a venv:
+**Automated regression tests**: `renode/tests/*.robot` run the same
+kind of checks as `boot.resc` (repl, RCC hooks, load ELF, drive
+peripherals) as Robot Framework tests via Renode's own `renode-test`
+runner -- `boot.robot` asserts no HardFault happened;
+`can_output.robot` additionally connects a CAN hub and asserts a real
+NMEA2000 (PGN 130306) frame with the right 29-bit ID actually left the
+FDCAN1 driver. Both share machine bring-up via
+`renode/tests/common.resource`'s `Boot Windmeter Firmware` keyword.
+Needs Renode's bundled test dependencies installed once into a venv:
 
 ```sh
 python3 -m venv /path/to/venv
@@ -196,7 +200,7 @@ reason as `boot.resc`):
 
 ```sh
 source /path/to/venv/bin/activate
-./renode-test /path/to/windmeter/renode/tests/boot.robot
+./renode-test /path/to/windmeter/renode/tests/*.robot
 ```
 
 Detecting a fault this way needs care: comparing `sysbus.cpu PC`
