@@ -61,3 +61,27 @@ jobs:
           name: lcov.info
           path: lcov.info
           if-no-files-found: ignore
+
+      # Hardware-behavior regression checks against an emulated
+      # STM32H723ZG (no physical board needed) -- see
+      # PROJECT_PRINCIPLES.md § Booting the Firmware Under Emulation.
+      # Needs the embedded build from the Verify step above; doesn't
+      # rebuild it itself.
+      - name: Renode tests (renode/tests/*.robot)
+        run: |
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -v "$PWD":/workspace \
+            -w /workspace \
+            windmeter-ci:local \
+            ./ci/renode-test.sh
+
+      - name: Upload Renode test report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: renode-test-report
+          path: |
+            report.html
+            log.html
+          if-no-files-found: ignore

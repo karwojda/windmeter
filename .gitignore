@@ -21,3 +21,9 @@
 #opensysml artifacts
 share/man/man1/sysml-lsp.1
 share/man/man1/sysml.1
+
+# renode-test (renode/tests/*.robot) output, written to the invocation
+# directory by default
+/log.html
+/report.html
+/robot_output.xml

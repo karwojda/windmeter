@@ -2,9 +2,13 @@
 Library           OperatingSystem
 
 *** Variables ***
-${REPL}           @/home/qarol/git/windmeter/windmeter/renode/stm32h723zg.repl
-${ELF}            @/home/qarol/git/windmeter/windmeter/target/thumbv7em-none-eabihf/debug/wind_meter
-${FAULT_PROBE}     @/home/qarol/git/windmeter/windmeter/renode/fault_probe.py
+# Default matches a local checkout; CI overrides it (repo mounted at
+# /workspace, see ci/renode-test.sh) with `--variable
+# WINDMETER_ROOT:/workspace`.
+${WINDMETER_ROOT}    /home/qarol/git/windmeter/windmeter
+${REPL}               @${WINDMETER_ROOT}/renode/stm32h723zg.repl
+${ELF}                @${WINDMETER_ROOT}/target/thumbv7em-none-eabihf/debug/wind_meter
+${FAULT_PROBE}         @${WINDMETER_ROOT}/renode/fault_probe.py
 
 *** Keywords ***
 # Common machine bring-up shared by every windmeter Renode test: create
