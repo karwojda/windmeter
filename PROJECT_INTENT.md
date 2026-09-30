@@ -38,10 +38,11 @@ duplicating it.
   current scope.
 - NOT (v1): ultrasonic wind sensor hardware -- the architecture supports
   it, but v1 ships with cup-and-vane.
-- Not yet decided: NMEA0183 vs NMEA2000/CAN bus variant; local storage
-  medium; boat heading source beyond GPS course-over-ground. Tracked as
-  open items in `requirements/model/requirements.sysml` and in the
-  windmeter-v1 seed.
+- Not yet decided: boat heading source beyond GPS course-over-ground
+  (velocity-over-ground is a first-iteration simplification, accurate
+  only absent current/leeway). NMEA2000 over CAN and SD-card local
+  storage are both decided (see `requirements/model/requirements.sysml`
+  and `PROJECT_DESCRIPTION.md`).
 
 ## Tier
 

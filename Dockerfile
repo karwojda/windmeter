@@ -22,7 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # sysml / sysml-lsp (Open-MBEE/OpenSysML) -- validates
 # requirements/model/*.sysml. Pinned for reproducible builds; bump
 # deliberately, not automatically.
-ARG OPENSYSML_VERSION=v0.8.1
+ARG OPENSYSML_VERSION=v0.9.1
 RUN curl -fsSL "https://github.com/Open-MBEE/OpenSysML/releases/download/${OPENSYSML_VERSION}/opensysml-linux-amd64.tar.gz" \
         -o /tmp/opensysml.tar.gz \
     && tar -xzf /tmp/opensysml.tar.gz -C /usr/local/bin sysml sysml-lsp \

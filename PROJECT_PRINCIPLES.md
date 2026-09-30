@@ -223,3 +223,43 @@ PascalCase; usages (part/item/requirement instances, including
 requirement short IDs like `<'REQ-001'>`) are camelCase -- the `sysml`
 CLI's style linter (`STYL002`) enforces this. Requirement short IDs use
 `REQ-NNN`.
+
+## Generating PROJECT_DESCRIPTION.md
+
+`requirements/model/project_description.sysml` defines a
+`DocumentQueries::Document` (`ProjectDescription::ProjectDescriptionDoc`)
+that reads `domain.sysml`/`system.sysml`/`requirements.sysml` directly --
+requirements, system components and a traceability matrix all come from
+the live model, not a hand-maintained copy of it, so it can't drift the
+way prose written separately could. Regenerate after any model change:
+
+```sh
+sysml requirements/model -render-document \
+  ProjectDescription::ProjectDescriptionDoc -o PROJECT_DESCRIPTION.md
+```
+
+Rendering is deterministic (same model -> byte-identical Markdown), so a
+stale `PROJECT_DESCRIPTION.md` shows up as an ordinary diff against the
+model, not a silent drift -- not currently CI-enforced, though a golden-file
+check (`git diff --exit-code PROJECT_DESCRIPTION.md` after regenerating)
+would be straightforward to add if that drift starts happening in practice.
+
+Two modeling details the queries work around, worth knowing before adding
+more:
+- A requirement usage (`<'REQ-001'> senseApparentWind : SenseApparentWindReqDef`)
+  carries the short ID; its `doc` text lives on the requirement *def*
+  (`SenseApparentWindReqDef`) it's typed by -- two different elements, so
+  `documentation` projects empty off the usage. The document queries
+  `RelatedElements(..., relationshipKind = "typing", direction = "outgoing")`
+  to reach the def that actually holds the text (same trick
+  `SystemComponents` uses for each part's hardware-selection doc).
+- `windMeterV1` only *redeclares* the one part it swaps in
+  (`windSensor -> CupAndVaneWindSensor`); its other five parts are
+  inherited from `WindMeterUnit`, not owned, so they aren't direct
+  `Descendants` of `windMeterV1` itself. `SystemComponents` is rooted at
+  `WindMeterUnit` (the general architecture) instead, with a separate
+  paragraph calling out `windMeterV1`'s one concrete override.
+- A query parameter can only bind a *feature* (a part, a requirement
+  usage); a package or definition name (`WindMeterRequirements`,
+  `WindMeterSystem::WindMeterUnit`) needs `Named(qualifiedName = "...")`
+  to resolve to an element a query can start from.
