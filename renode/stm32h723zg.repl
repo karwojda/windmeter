@@ -1,0 +1,18 @@
+// STM32H723ZG platform description for Renode, adapted from Renode's own
+// bundled `platforms/cpus/stm32h7.repl` (the H7-family base also used by
+// its `stm32h743.repl`/`stm32h753.repl` overlays).
+//
+// Deliberately NOT resizing axiSram/sram1/sram2/sram4 (and not removing
+// flashBank2/sram3) to exactly match our `memory.x`: the H743/753 the
+// base file models has a superset of the real H723ZG's RAM -- bigger
+// regions, plus a second flash bank and an sram3 our chip doesn't have
+// at all. An oversized backing region is harmless for proving the
+// firmware boots and reaches its steady-state executor loop (memory.x
+// is what actually constrains where our code/data land; this repl only
+// needs to back those same addresses with *some* RAM, which it already
+// does). The real sram2 address (0x30040000) also collides with the
+// base's sram3 at that same address, so correcting sram2 in place isn't
+// a no-op edit -- revisit with size-accurate, collision-free regions if
+// a later task needs to observe out-of-bounds behavior or emulate DMA
+// into a specific SRAM bank.
+using "platforms/cpus/stm32h7.repl"

@@ -59,7 +59,14 @@ bind_interrupts!(struct Irqs {
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let config = Config::default();
+    let mut config = Config::default();
+    // ADC1's clock mux defaults to pll2_p, but this project's clock tree
+    // stays on Config::default()'s plain HSI (no PLLs configured) -- route
+    // it via the "per" mux from HSI instead, which is already running.
+    // Found by booting this firmware under Renode (see renode/) and
+    // reading the panic over RTT: PLL2 not running when ADC1 was set up.
+    config.rcc.mux.adcsel = embassy_stm32::rcc::mux::Adcsel::PER;
+    config.rcc.mux.persel = embassy_stm32::rcc::mux::Persel::HSI;
 
     let p = embassy_stm32::init(config);
     info!("Hello World!");

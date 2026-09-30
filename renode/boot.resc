@@ -1,0 +1,59 @@
+:name: windmeter boot proof
+:Loads the real compiled firmware ELF onto an emulated STM32H723ZG,
+:proving the toolchain/image boots under Renode end to end (see
+:PROJECT_PRINCIPLES.md). Not wired to any simulated sensor input yet --
+:that's a separate, bigger follow-up.
+:
+:Rebuild first: `cargo build --target thumbv7em-none-eabihf`
+:Run from Renode's own install dir (the `using`/`i @platforms/...`
+:paths below resolve relative to it), pointing at this script, e.g.:
+:   /path/to/renode --disable-gui --console \
+:     -e 'i @/path/to/windmeter/renode/boot.resc' -e quit
+:
+:If it panics, the panic message (and anything else logged before it)
+:is decoded from the dumped RTT bytes with the real defmt-print tool:
+:   defmt-print -e target/thumbv7em-none-eabihf/debug/wind_meter \
+:     < /tmp/windmeter_rtt.bin
+
+$bin ?= @/home/qarol/git/windmeter/windmeter/target/thumbv7em-none-eabihf/debug/wind_meter
+
+mach create "windmeter"
+i @/home/qarol/git/windmeter/windmeter/renode/stm32h723zg.repl
+
+cpu VectorTableOffset 0x8000000
+sysbus LoadELF $bin
+
+# Renode doesn't auto-discover a `defmt-rtt`-shaped RTT control block (its
+# bundled segger-rtt.py script hooks SEGGER's own C function symbols,
+# which defmt-rtt -- a from-scratch reimplementation -- never calls), so
+# this reads the standard SEGGER RTT control block layout directly out of
+# RAM instead: generic, and it works for any RTT flavor.
+i @/home/qarol/git/windmeter/windmeter/renode/fault_probe.py
+
+# panic-probe traps into a debugger breakpoint on panic; with none
+# attached, Renode sees it as an undefined-instruction fault. Hook
+# HardFault's real address (resolved from the loaded ELF, since it
+# shifts on every rebuild) so a panic's exception frame -- and thus the
+# faulting PC -- is captured instead of silently free-running past it.
+probe_hard_fault `sysbus GetSymbolAddress "HardFault_"`
+
+emulation RunFor "2"
+
+echo "=== CPU state after 2s virtual run ==="
+sysbus.cpu PC
+sysbus.cpu IsHalted
+
+# `_SEGGER_RTT` (the RTT control block `defmt-rtt` defines) has stayed
+# at this exact address across every rebuild seen so far -- unlike
+# HardFault's, which does move -- but the monitor's GetSymbolAddress
+# doesn't support inline offset math, so if it ever does shift, use
+# `sysbus GetSymbolAddress "_SEGGER_RTT"` to get its new base and adjust
+# the two offsets below (standard SEGGER RTT control block layout:
+# 16-byte "SEGGER RTT" magic, MaxNumUpBuffers, MaxNumDownBuffers, then
+# the aUp[] channel array -- +0x1C is aUp[0].pBuffer, +0x24 is
+# aUp[0].WrOff).
+echo "=== _SEGGER_RTT up-channel 0 write offset (bytes produced so far) ==="
+sysbus ReadDoubleWord 0x20000074
+
+dump_rtt `sysbus ReadDoubleWord 0x2000006C` 0x400 "/tmp/windmeter_rtt.bin"
+echo "RTT bytes -> /tmp/windmeter_rtt.bin (decode with defmt-print, see header)"
