@@ -130,16 +130,55 @@ defmt-print -e target/thumbv7em-none-eabihf/debug/wind_meter \
   < /tmp/windmeter_rtt.bin
 ```
 
-Not wired to simulated sensor input (GPIO/UART/CAN stimulus) -- that
-would let Renode stand in for more of tasks.md's hardware-verification
-tasks (1a/2a/5a) and is a separate, bigger follow-up, not yet done.
+**CAN is wired and fully working**: `boot.resc` connects `fdcan1` to a
+`CANHub` and `fault_probe.py`'s `probe_can` logs every frame it
+transmits (id + raw bytes) to `/tmp/windmeter_can.log` -- this is real
+confirmation that the FDCAN1 peripheral driver code produces correct
+PGN 130306 bytes on a (virtual) bus, not just a unit-tested encoding
+function. Still not a substitute for tasks.md Task 5a's actual point
+(a real NMEA2000 bus/analyzer, or a real chartplotter showing the
+data) -- see its own acceptance criteria.
+
+**GPIO (anemometer pulses) and UART (GPS sentences) are not**, despite
+real effort: `boot.resc` drives them (`gpioPortA OnGPIO`/`usart3
+WriteLine`), and those calls demonstrably change the right hardware
+state (confirmed separately by reading GPIOA's IDR and USART3's ISR
+back), but the firmware never reacts to either -- EXTI0's handler is
+never entered and USART3's RXNE flag never sets, even with
+NVIC/EXTI/RTSR1/IMR1 all correctly configured per a register-level
+check. This looks like a gap in how this Renode peripheral-model
+combination propagates externally-injected stimulus through to
+STM32-specific interrupt/DMA machinery, not a firmware bug -- left in
+`boot.resc` as working groundwork for whoever revisits it.
+
+Three real clock-configuration bugs were found and fixed along the
+way (`wind_meter.rs`'s `Config::default()` left several peripherals on
+a PLL-sourced mux with no PLL ever enabled) -- these would have bitten
+real hardware too, not just Renode:
+- ADC1 and SPI1 defaulted to a PLL2/PLL1 mux with nothing running it --
+  routed both via the `per` mux from HSI instead (already running).
+- FDCAN1 has no HSI/`per` bypass (only HSE or a PLL output) -- given a
+  small dedicated PLL1 (Q output only, sysclk stays on HSI).
+
+Also found: `logger_task`'s SD-card retry logic
+(`embedded-sdmmc`'s `AcquireOpts { retries: 50 }`) blocks the entire
+single-threaded embassy executor for several virtual seconds per tick
+when no card responds -- every other task (wind sensing, GPS, CAN
+output) stalls along with it. Real behavior, not a Renode artifact;
+worth keeping in mind for Task 4a (a slow or faulty real card could
+have the same effect, which REQ-005's negative AC doesn't currently
+cover -- it only requires "doesn't crash", not "doesn't stall
+everything else").
 
 Known Renode-side gap, not a firmware bug: its `STM32H7_RCC` model logs
-`Unhandled write ... Tags: ADCSEL` and never actually stores bit 17 of
-`D3CCIPR` -- confirmed by reading the register back and seeing `0x0`
-regardless of what's written. Harmless for a boot-proof pass; revisit if
-a later Renode version (or a peripheral-model patch) fixes it and ADC
-clock-mux behavior specifically needs verifying under emulation.
+`Unhandled write ... Tags: ADCSEL`/`SPI123SEL`/`FDCANSEL` and doesn't
+persist the bits those tags name -- confirmed by reading each register
+back and seeing them never stuck, regardless of what was written.
+`boot.resc` works around it with `AddBeforeReadDoubleWordHook`, forcing
+reads of the two affected registers to return what the firmware's own
+writes intended (captured from the warnings' logged values). Revisit if
+a later Renode version fixes this and the register-level workaround is
+no longer needed.
 
 ## SysML Conventions
 

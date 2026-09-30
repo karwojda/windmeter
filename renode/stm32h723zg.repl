@@ -16,3 +16,11 @@
 // a later task needs to observe out-of-bounds behavior or emulate DMA
 // into a specific SRAM bank.
 using "platforms/cpus/stm32h7.repl"
+
+// The base file only models SPI4 (used by its own reference boards) --
+// add SPI1 (this board's SD-card SPI, see wind_meter.rs) at its real
+// address, same shape as the base's own spi4 entry.
+spi1: SPI.STM32H7_SPI @ {
+        sysbus 0x40013000;
+        rcc RegistrationPeripheralAlias.SPI1
+    }

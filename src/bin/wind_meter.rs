@@ -60,13 +60,28 @@ bind_interrupts!(struct Irqs {
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let mut config = Config::default();
-    // ADC1's clock mux defaults to pll2_p, but this project's clock tree
-    // stays on Config::default()'s plain HSI (no PLLs configured) -- route
-    // it via the "per" mux from HSI instead, which is already running.
-    // Found by booting this firmware under Renode (see renode/) and
-    // reading the panic over RTT: PLL2 not running when ADC1 was set up.
+    // ADC1 and SPI1's clock muxes both default to a PLL output, but this
+    // project's clock tree stays on Config::default()'s plain HSI (no
+    // PLLs configured) -- route both via the "per" mux from HSI instead,
+    // which is already running. Found by booting this firmware under
+    // Renode (see renode/) and reading each panic over RTT: PLL2/PLL1 not
+    // running when ADC1/SPI1 were set up.
     config.rcc.mux.adcsel = embassy_stm32::rcc::mux::Adcsel::PER;
+    config.rcc.mux.spi123sel = embassy_stm32::rcc::mux::Saisel::PER;
     config.rcc.mux.persel = embassy_stm32::rcc::mux::Persel::HSI;
+    // FDCAN1 has no HSI/"per" bypass option (only HSE or a PLL output) --
+    // unlike ADC1/SPI1, its clock is unavoidably PLL-sourced, so give it
+    // a small dedicated PLL1 output (sysclk stays on HSI; only the Q
+    // output is enabled). Also found via the same Renode boot.
+    config.rcc.pll1 = Some(embassy_stm32::rcc::Pll {
+        source: embassy_stm32::rcc::PllSource::HSI,
+        prediv: embassy_stm32::rcc::PllPreDiv::DIV4,
+        mul: embassy_stm32::rcc::PllMul::MUL16,
+        divp: None,
+        divq: Some(embassy_stm32::rcc::PllDiv::DIV8),
+        divr: None,
+    });
+    config.rcc.mux.fdcansel = embassy_stm32::rcc::mux::Fdcansel::PLL1_Q;
 
     let p = embassy_stm32::init(config);
     info!("Hello World!");

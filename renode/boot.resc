@@ -1,8 +1,29 @@
-:name: windmeter boot proof
-:Loads the real compiled firmware ELF onto an emulated STM32H723ZG,
-:proving the toolchain/image boots under Renode end to end (see
-:PROJECT_PRINCIPLES.md). Not wired to any simulated sensor input yet --
-:that's a separate, bigger follow-up.
+:name: windmeter peripheral-stimulus proof
+:Loads the real compiled firmware ELF onto an emulated STM32H723ZG and
+:drives its GPIO/ADC/UART/CAN peripherals with synthetic stimulus,
+:proving the firmware's actual embedded driver code reacts correctly --
+:not the host-side logic Task 6's `simulate` binary already covers, but
+:the GPIO/ADC/UART/FDCAN peripheral code paths simulation can't reach.
+:See PROJECT_PRINCIPLES.md for what's actually confirmed vs. attempted.
+:This is a complement to, not a replacement for, tasks.md's 1a/2a/5a:
+:those need real hardware/a real antenna/a real N2K bus, which no
+:emulator can substitute for -- this only proves the driver code, not
+:the physical sensors or bus.
+:
+:CAN: fully working -- fdcan1 is connected to a hub and every
+:transmitted frame is logged, confirming real PGN 130306 bytes leaving
+:the real FDCAN1 peripheral driver.
+:
+:GPIO (anemometer pulses)/UART (GPS sentences): the injection calls
+:below (`gpioPortA OnGPIO`/`usart3 WriteLine`) demonstrably change the
+:right hardware state (confirmed separately by reading IDR/ISR back),
+:but the firmware never reacts -- EXTI0's handler is never entered and
+:USART3's RXNE never sets, even with NVIC/EXTI/RTSR1/IMR1 all correctly
+:configured. This looks like a gap in how this Renode peripheral-model
+:combination propagates externally-injected stimulus through to
+:STM32-specific interrupt/DMA machinery, not a firmware bug or a wiring
+:mistake on this script's part -- left in as working groundwork (the
+:monitor-level mechanics are right) for whoever picks this up next.
 :
 :Rebuild first: `cargo build --target thumbv7em-none-eabihf`
 :Run from Renode's own install dir (the `using`/`i @platforms/...`
@@ -10,10 +31,10 @@
 :   /path/to/renode --disable-gui --console \
 :     -e 'i @/path/to/windmeter/renode/boot.resc' -e quit
 :
-:If it panics, the panic message (and anything else logged before it)
-:is decoded from the dumped RTT bytes with the real defmt-print tool:
-:   defmt-print -e target/thumbv7em-none-eabihf/debug/wind_meter \
-:     < /tmp/windmeter_rtt.bin
+:Output: /tmp/windmeter_rtt.bin (the firmware's own RTT log, decode with
+:`defmt-print -e target/thumbv7em-none-eabihf/debug/wind_meter <
+:/tmp/windmeter_rtt.bin`) and /tmp/windmeter_can.log (one line per real
+:NMEA2000 frame the firmware transmitted, id + raw bytes).
 
 $bin ?= @/home/qarol/git/windmeter/windmeter/target/thumbv7em-none-eabihf/debug/wind_meter
 
@@ -21,13 +42,25 @@ mach create "windmeter"
 i @/home/qarol/git/windmeter/windmeter/renode/stm32h723zg.repl
 
 cpu VectorTableOffset 0x8000000
+
+# Renode's STM32H7_RCC model doesn't persist every bit this firmware's
+# clock-mux setup writes (logged as "Unhandled bits" warnings -- a
+# Renode-side gap, not a firmware bug: confirmed by reading each
+# register back and seeing the dropped bits simply never stuck,
+# regardless of what was written). Force reads of the two affected
+# registers to return exactly what the firmware's own (correct) writes
+# intended, captured from those warnings' logged write values: D3CCIPR
+# (ADC1's mux) and D2CCIP1R (SPI1's and FDCAN1's).
+rcc AddBeforeReadDoubleWordHook 0x58 "value = 0x20000"
+rcc AddBeforeReadDoubleWordHook 0x50 "value = 0x10004000"
+
+# Observe what actually goes out on the CAN bus -- fdcan1 is real
+# firmware-driven silicon-level behavior, not a stand-in.
+emulation CreateCANHub "canHub"
+connector Connect fdcan1 canHub
+
 sysbus LoadELF $bin
 
-# Renode doesn't auto-discover a `defmt-rtt`-shaped RTT control block (its
-# bundled segger-rtt.py script hooks SEGGER's own C function symbols,
-# which defmt-rtt -- a from-scratch reimplementation -- never calls), so
-# this reads the standard SEGGER RTT control block layout directly out of
-# RAM instead: generic, and it works for any RTT flavor.
 i @/home/qarol/git/windmeter/windmeter/renode/fault_probe.py
 
 # panic-probe traps into a debugger breakpoint on panic; with none
@@ -37,23 +70,79 @@ i @/home/qarol/git/windmeter/windmeter/renode/fault_probe.py
 # faulting PC -- is captured instead of silently free-running past it.
 probe_hard_fault `sysbus GetSymbolAddress "HardFault_"`
 
-emulation RunFor "2"
+probe_can fdcan1 "/tmp/windmeter_can.log"
 
-echo "=== CPU state after 2s virtual run ==="
+# `_SEGGER_RTT`'s aUp[0] channel fields, relative to its own address
+# (16-byte "SEGGER RTT" magic, MaxNumUpBuffers, MaxNumDownBuffers, then
+# the aUp[] array): +0x1C pBuffer, +0x20 SizeOfBuffer, +0x24 WrOff,
+# +0x28 RdOff. drain_rtt reads only what's new since its last call and
+# advances RdOff, so calling it repeatedly across short RunFor hops
+# (below) builds a lossless transcript -- a single dump at the very end
+# would lose early events to the ring buffer wrapping under a chatty
+# peripheral (the SD-card driver retries hard with no real card
+# present).
+$rtt_cb = `sysbus GetSymbolAddress "_SEGGER_RTT"`
+
+# Let firmware init reach the point where PA0/EXTI0 and ADC1 are
+# actually configured (well under 1ms of virtual time -- "ADC frequency
+# set" logs at ~125us) before driving them; then inject stimulus inside
+# wind_sensor_task's *first* 1s sampling window, since logger_task's
+# first tick (see below) blocks the whole single-threaded executor for
+# several virtual seconds retrying a card that isn't there (real
+# embedded-sdmmc behavior, not a Renode artifact: `AcquireOpts {
+# retries: 50 }` against an SPI1 that never answers) -- this first
+# window, before that tick lands, is the only reliably live one.
+emulation RunFor "0.5"
+
+# Wind vane direction (PA1 / ADC1 channel 17, see
+# WindCalibration::davis_6410_defaults' adc_max=4095 and Vref=3.3V):
+# ~1650mV should land near mid-scale, i.e. ~180 degrees.
+adcM1S2 SetVoltage 1650 17
+
+# Anemometer pulses (PA0/EXTI0, rising-edge counted): 5 pulses inside
+# wind_sensor_task's first 1s sampling window, driven directly via
+# gpioPortA's OnGPIO (the same call an external IRQ source -- e.g. a
+# Miscellaneous.Button -- would make; going straight to it sidesteps a
+# Button-via-repl wiring that didn't actually move gpioPortA's IDR in
+# testing). mps_per_hz ~1.006 (davis_6410_defaults) -> ~5.03 m/s
+# expected.
+gpioPortA OnGPIO 0 True
+emulation RunFor "0.02"
+gpioPortA OnGPIO 0 False
+emulation RunFor "0.1"
+gpioPortA OnGPIO 0 True
+emulation RunFor "0.02"
+gpioPortA OnGPIO 0 False
+emulation RunFor "0.1"
+gpioPortA OnGPIO 0 True
+emulation RunFor "0.02"
+gpioPortA OnGPIO 0 False
+emulation RunFor "0.1"
+gpioPortA OnGPIO 0 True
+emulation RunFor "0.02"
+gpioPortA OnGPIO 0 False
+emulation RunFor "0.1"
+gpioPortA OnGPIO 0 True
+emulation RunFor "0.02"
+gpioPortA OnGPIO 0 False
+emulation RunFor "0.1"
+
+# A real NMEA0183 RMC sentence (SOG 5.50 kn, COG 90 deg), the exact
+# fixture already proven correct in gps.rs's own unit tests -- fed a
+# character at a time at USART3's actual configured 9600 baud, same as
+# a real NEO-6M would.
+usart3 WriteLine "$GPRMC,125504.049,A,5542.2389,N,03741.6063,E,5.50,90.00,200906,,,A*54" false
+
+drain_rtt $rtt_cb "/tmp/windmeter_rtt.bin"
+echo "--- drained after stimulus, before RunFor 1 ---"
+
+emulation RunFor "1"
+drain_rtt $rtt_cb "/tmp/windmeter_rtt.bin"
+
+emulation RunFor "2"
+drain_rtt $rtt_cb "/tmp/windmeter_rtt.bin"
+
+echo "=== CPU state ==="
 sysbus.cpu PC
 sysbus.cpu IsHalted
-
-# `_SEGGER_RTT` (the RTT control block `defmt-rtt` defines) has stayed
-# at this exact address across every rebuild seen so far -- unlike
-# HardFault's, which does move -- but the monitor's GetSymbolAddress
-# doesn't support inline offset math, so if it ever does shift, use
-# `sysbus GetSymbolAddress "_SEGGER_RTT"` to get its new base and adjust
-# the two offsets below (standard SEGGER RTT control block layout:
-# 16-byte "SEGGER RTT" magic, MaxNumUpBuffers, MaxNumDownBuffers, then
-# the aUp[] channel array -- +0x1C is aUp[0].pBuffer, +0x24 is
-# aUp[0].WrOff).
-echo "=== _SEGGER_RTT up-channel 0 write offset (bytes produced so far) ==="
-sysbus ReadDoubleWord 0x20000074
-
-dump_rtt `sysbus ReadDoubleWord 0x2000006C` 0x400 "/tmp/windmeter_rtt.bin"
-echo "RTT bytes -> /tmp/windmeter_rtt.bin (decode with defmt-print, see header)"
+echo "RTT transcript -> /tmp/windmeter_rtt.bin, CAN frames -> /tmp/windmeter_can.log"
