@@ -1,4 +1,12 @@
-def mc_probe_hard_fault(address):
+# `marker_path`, if non-empty, gets a file written to it on the first
+# hit -- lets a caller that can't read Renode's own log (e.g. a robot
+# test, via `File Should Not Exist`/`File Should Exist`) detect a fault
+# happened. Comparing PC to `address` *after* the fact doesn't work: by
+# the time a script samples PC (e.g. after `emulation RunFor`),
+# HardFault's own handler body has already executed a few instructions
+# past its entry point, so PC no longer equals the entry address even
+# though execution is still inside it.
+def mc_probe_hard_fault(address, marker_path=""):
     bus = monitor.Machine.SystemBus
     state = {"hits": 0}
 
@@ -11,6 +19,9 @@ def mc_probe_hard_fault(address):
         for i, name in enumerate(names):
             value = bus.ReadDoubleWord(sp + 4 * i)
             cpu.WarningLog("exception frame " + name + " = " + str(value))
+        if marker_path:
+            with open(marker_path, "w") as f:
+                f.write("hard fault hit\n")
 
     for cpu in bus.GetCPUs():
         cpu.AddHook(address, on_hit)

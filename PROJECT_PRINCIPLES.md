@@ -180,6 +180,38 @@ writes intended (captured from the warnings' logged values). Revisit if
 a later Renode version fixes this and the register-level workaround is
 no longer needed.
 
+**Automated regression test**: `renode/tests/boot.robot` runs the same
+boot-proof as `boot.resc` (repl, RCC hooks, load ELF, run 2s) as a
+Robot Framework test via Renode's own `renode-test` runner, asserting
+no HardFault happened. Needs Renode's bundled test dependencies
+installed once into a venv:
+
+```sh
+python3 -m venv /path/to/venv
+/path/to/venv/bin/pip install -r /path/to/renode/tests/requirements.txt
+```
+
+Then, from Renode's own install directory (same path-resolution
+reason as `boot.resc`):
+
+```sh
+source /path/to/venv/bin/activate
+./renode-test /path/to/windmeter/renode/tests/boot.robot
+```
+
+Detecting a fault this way needs care: comparing `sysbus.cpu PC`
+against `HardFault_`'s address *after* `emulation RunFor` doesn't
+work, since by the time PC is sampled, the handler has already
+executed a few instructions past its own entry point and PC no longer
+matches it exactly, even though execution is still inside it (found by
+deliberately reintroducing the ADC1 clock-mux bug and watching the
+naive version of this test still pass). `fault_probe.py`'s
+`probe_hard_fault` takes an optional marker-file path instead, written
+the moment the handler is *entered* (a hook, not a post-hoc PC
+comparison) -- the test asserts that file doesn't exist. Verified both
+ways: passes against the current (fixed) firmware, fails with the
+right file-exists message when the ADC1 clock-mux fix is reverted.
+
 ## SysML Conventions
 
 `part def` / `item def` / `attribute def` / `requirement def` names are
