@@ -12,5 +12,13 @@ set -eu
 
 WINDMETER_ROOT="$(pwd)"
 
+# Under `docker run --user <uid>` with no passwd entry for that uid,
+# HOME is `/`; Renode (.NET) creates $HOME/.config at startup and aborts
+# when it can't. Point HOME somewhere writable in that case.
+if [ ! -w "${HOME:-/}" ]; then
+    HOME="$(mktemp -d)"
+    export HOME
+fi
+
 . /opt/renode-venv/bin/activate
 renode-test --variable "WINDMETER_ROOT:${WINDMETER_ROOT}" "${WINDMETER_ROOT}"/renode/tests/*.robot
