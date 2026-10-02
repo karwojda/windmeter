@@ -1,5 +1,8 @@
 # windmeter
 
+[![CI](https://github.com/karwojda/windmeter/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/karwojda/windmeter/actions/workflows/ci.yaml)
+[![codecov](https://codecov.io/gh/karwojda/windmeter/branch/main/graph/badge.svg)](https://codecov.io/gh/karwojda/windmeter)
+
 A boat-mounted instrument that senses apparent wind, reads GPS, computes
 true wind, logs both locally, and broadcasts the result on the boat's
 NMEA2000 instrument bus -- a personal replacement for expensive
@@ -54,6 +57,13 @@ tests, coverage, embedded build); `ci/renode-test.sh` additionally runs
 the Renode-based hardware-behavior regression tests. Both run inside the
 project's `Dockerfile` image in CI (`.github/workflows/ci.yaml`) on every
 push/PR.
+
+Coverage is host-side line coverage from `cargo llvm-cov
+--no-default-features`, gated at 85% in `ci/verify.sh` and published to
+Codecov for the badge above. It measures the host-testable logic only:
+the `embedded`-feature driver code (`src/bin/wind_meter.rs` and the
+hardware modules) never builds on the host, so it isn't in the number --
+that code is exercised by the Renode tests instead.
 
 ## More
 

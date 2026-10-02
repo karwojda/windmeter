@@ -1,0 +1,15 @@
+# lcov.info is produced inside the CI container, where the repo is
+# mounted at /workspace -- strip that so paths match the repo tree.
+fixes:
+  - "/workspace/::"
+
+# The coverage gate lives in ci/verify.sh (cargo llvm-cov
+# --fail-under-lines); Codecov only reports, it doesn't fail commits/PRs.
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true

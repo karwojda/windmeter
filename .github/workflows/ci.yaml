@@ -10,6 +10,12 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-24.04
+    # id-token: Codecov upload authenticates via OIDC, so no
+    # CODECOV_TOKEN secret is needed. Declaring any permission drops the
+    # rest to none, hence contents: read for checkout.
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v7
 
@@ -61,6 +67,17 @@ jobs:
           name: lcov.info
           path: lcov.info
           if-no-files-found: ignore
+
+      # Publishes ci/verify.sh's lcov.info for the README badge. Not a
+      # gate: the coverage threshold is enforced by cargo llvm-cov
+      # --fail-under-lines in ci/verify.sh, so a Codecov outage must not
+      # fail the build.
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          files: ./lcov.info
+          use_oidc: true
+          fail_ci_if_error: false
 
       # Hardware-behavior regression checks against an emulated
       # STM32H723ZG (no physical board needed) -- see
