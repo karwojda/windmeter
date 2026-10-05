@@ -62,6 +62,9 @@ spec's `tasks.md`.
   buoys, race committee, web viewer). windmeter reuses its SysML domain
   vocabulary and patterns, narrowed to a single boat's own instrument. May
   reconnect to it later if the multi-boat direction is picked back up.
+- `head_unit` (`../head_unit`) -- separate display project (Zephyr + grvl)
+  that reads windmeter's data over a standard wireless link. Consumes
+  windmeter's output; windmeter does not depend on it.
 
 ## Spec Seeds
 

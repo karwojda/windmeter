@@ -4,8 +4,9 @@ Flat parking lot for "might be neat" observations -- passive capture, not
 actively pondered yet. See `ws._meta/lifecycle.md` for graduation rules
 (idea -> seed -> spec).
 
-- A dedicated wireless-connected display unit for windmeter, separate from
-  the main sensing/logging/NMEA2000 unit -- for boats without a
-  chartplotter or where a helm-mounted readout is wanted without running
-  wires. Surfaced during windmeter-v1 requirements (2026-09-18); v1
-  explicitly has no local display (NMEA2000-connected instruments only).
+- A wireless output in a standard sensor protocol (BLE is the likely
+  candidate), so the separate head_unit display project (`../head_unit`)
+  can show windmeter's data. The display itself graduated out of this
+  list into that project on 2026-10-05; windmeter-v1 still ships
+  NMEA2000-only, and the STM32H723 has no radio, so this would mean added
+  hardware. Wait for head_unit to pick its wireless standard.
